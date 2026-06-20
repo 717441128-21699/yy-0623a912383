@@ -4,7 +4,7 @@ declare global {
       batch: {
         getAll: () => Promise<Batch[]>;
         getByStatus: (status: string) => Promise<Batch[]>;
-        create: (data: Omit<Batch, 'id' | 'created_at' | 'status'>) => Promise<number>;
+        create: (data: Omit<Batch, 'id' | 'created_at' | 'status'>, operator?: string) => Promise<number>;
         delete: (id: number) => Promise<void>;
         getDetail: (id: number) => Promise<BatchDetail | null>;
         getMonthlySummary: (yearMonth?: string) => Promise<MonthlySummaryItem[]>;
@@ -15,13 +15,13 @@ declare global {
         getByBatchId: (batchId: number) => Promise<Sampling[]>;
         getPendingSend: (keyword?: string) => Promise<Sampling[]>;
         getOverdue: () => Promise<Sampling[]>;
-        create: (data: Omit<Sampling, 'id' | 'created_at'>) => Promise<number>;
-        markAsSent: (id: number, sentDate: string) => Promise<void>;
+        create: (data: Omit<Sampling, 'id' | 'created_at'>, operator?: string) => Promise<number>;
+        markAsSent: (id: number, sentDate: string, operator?: string) => Promise<void>;
       };
       report: {
         getAll: (keyword?: string) => Promise<Report[]>;
         getByBatchId: (batchId: number) => Promise<Report[]>;
-        create: (data: Omit<Report, 'id' | 'created_at'>) => Promise<number>;
+        create: (data: Omit<Report, 'id' | 'created_at'>, operator?: string) => Promise<number>;
       };
       disposal: {
         getAll: () => Promise<DisposalItem[]>;
@@ -114,6 +114,11 @@ export interface DisposalItem {
   batch_id: number;
   disposal_opinion: string;
   retest_plan?: string;
+  retest_sample_no?: string;
+  retest_testing_agency?: string;
+  retest_report_no?: string;
+  retest_conclusion?: string;
+  retest_date?: string;
   final_result?: string;
   disposal_date: string;
   final_date?: string;
@@ -126,20 +131,50 @@ export interface DisposalItem {
   status?: BatchStatus;
 }
 
+export interface TransferSamplingDetail {
+  sample_no: string;
+  sampling_date: string;
+  has_photo: boolean;
+  is_sent: boolean;
+  sent_date: string;
+  testing_agency: string;
+}
+
+export interface TransferReportDetail {
+  report_no: string;
+  report_date: string;
+  conclusion: string;
+  unqualified_items: string;
+}
+
+export interface TransferDisposalDetail {
+  disposal_opinion: string;
+  retest_plan: string;
+  retest_sample_no: string;
+  retest_testing_agency: string;
+  retest_report_no: string;
+  retest_conclusion: string;
+  retest_date: string;
+  final_result: string;
+  final_date: string;
+}
+
 export interface TransferDocItem {
   batch_id: number;
   material_type: MaterialType;
   batch_no: string;
+  quantity: number;
+  furnace_no?: string;
+  represent_quantity: number;
+  sampling_location: string;
   entry_date: string;
   has_entry: boolean;
-  sampling_count: number;
   has_sealing_photo: boolean;
-  sent_count: number;
-  report_count: number;
-  report_nos: string[];
-  has_disposal: boolean;
   status: BatchStatus;
   complete: boolean;
+  samplings: TransferSamplingDetail[];
+  reports: TransferReportDetail[];
+  disposals: TransferDisposalDetail[];
 }
 
 export interface BatchDetail {

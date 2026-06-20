@@ -63,13 +63,13 @@ app.on('window-all-closed', () => {
 function registerIpcHandlers() {
   ipcMain.handle('batch:getAll', () => batchQueries.getAll());
   ipcMain.handle('batch:getByStatus', (_e, status: string) => batchQueries.getByStatus(status));
-  ipcMain.handle('batch:create', (_e, data) => {
+  ipcMain.handle('batch:create', (_e, data, operator?: string) => {
     const validation = validateBatch(data);
     if (!validation.valid) {
       throw new Error(validation.errors.join('；'));
     }
     const id = batchQueries.create(data);
-    logQueries.create({ batch_id: id, action: '新增进场登记', description: `${data.material_type} ${data.batch_no} 进场 ${data.quantity}` });
+    logQueries.create({ batch_id: id, action: '新增进场登记', description: `${data.material_type} ${data.batch_no} 进场 ${data.quantity}`, operator: operator || undefined });
     return id;
   });
   ipcMain.handle('batch:delete', (_e, id: number) => batchQueries.delete(id));
@@ -157,17 +157,17 @@ function registerIpcHandlers() {
     return all;
   });
 
-  ipcMain.handle('sampling:create', (_e, data) => {
+  ipcMain.handle('sampling:create', (_e, data, operator?: string) => {
     const validation = validateSampling(data);
     if (!validation.valid) {
       throw new Error(validation.errors.join('；'));
     }
     const id = samplingQueries.create(data);
     batchQueries.updateStatus(data.batch_id, '已取样待送检');
-    logQueries.create({ batch_id: data.batch_id, action: '完成取样', description: `样品编号 ${data.sample_no}，见证监理 ${data.witness_supervisor}` });
+    logQueries.create({ batch_id: data.batch_id, action: '完成取样', description: `样品编号 ${data.sample_no}，见证监理 ${data.witness_supervisor}`, operator: operator || undefined });
     return id;
   });
-  ipcMain.handle('sampling:markAsSent', (_e, id: number, sentDate: string) => {
+  ipcMain.handle('sampling:markAsSent', (_e, id: number, sentDate: string, operator?: string) => {
     if (!sentDate || !/^\d{4}-\d{2}-\d{2}$/.test(sentDate)) {
       throw new Error('送检日期格式无效，应为 YYYY-MM-DD');
     }
@@ -175,7 +175,7 @@ function registerIpcHandlers() {
     samplingQueries.markAsSent(id, sentDate);
     if (sampling) {
       batchQueries.updateStatus(sampling.batch_id, '已送检待报告');
-      logQueries.create({ batch_id: sampling.batch_id, action: '标记送检', description: `样品 ${sampling.sample_no}，送检日期 ${sentDate}` });
+      logQueries.create({ batch_id: sampling.batch_id, action: '标记送检', description: `样品 ${sampling.sample_no}，送检日期 ${sentDate}`, operator: operator || undefined });
     }
   });
 
@@ -195,7 +195,7 @@ function registerIpcHandlers() {
     return all;
   });
   ipcMain.handle('report:getByBatchId', (_e, batchId: number) => reportQueries.getByBatchId(batchId));
-  ipcMain.handle('report:create', (_e, data) => {
+  ipcMain.handle('report:create', (_e, data, operator?: string) => {
     const validation = validateReport(data);
     if (!validation.valid) {
       throw new Error(validation.errors.join('；'));
@@ -206,7 +206,8 @@ function registerIpcHandlers() {
     logQueries.create({
       batch_id: data.batch_id,
       action: '录入检测报告',
-      description: `报告 ${data.report_no}，结论：${data.conclusion}${data.unqualified_items ? '，不合格项：' + data.unqualified_items : ''}`
+      description: `报告 ${data.report_no}，结论：${data.conclusion}${data.unqualified_items ? '，不合格项：' + data.unqualified_items : ''}`,
+      operator: operator || undefined
     });
     return id;
   });
@@ -298,51 +299,82 @@ function registerIpcHandlers() {
   );
 
   ipcMain.handle('batch:getTransferList', (_e, yearMonth: string) => {
-    const db = getDb();
-    const stmt = db.prepare(`
-      SELECT m.*,
-        (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id) as sampling_count,
-        (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id AND s.sealing_photo IS NOT NULL AND s.sealing_photo != '') as photo_count,
-        (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id AND s.is_sent = 1) as sent_count,
-        (SELECT COUNT(*) FROM test_reports r WHERE r.batch_id = m.id) as report_count,
-        (SELECT COUNT(*) FROM disposal_records d WHERE d.batch_id = m.id) as disposal_count
-      FROM material_batches m
+    const batches: any[] = queryAll(`
+      SELECT m.* FROM material_batches m
       WHERE substr(m.entry_date, 1, 7) = ?
       ORDER BY m.entry_date ASC, m.material_type ASC
-    `);
-    stmt.bind([yearMonth]);
-    const rows: any[] = [];
-    while (stmt.step()) {
-      rows.push(stmt.getAsObject() as any);
-    }
-    stmt.free();
+    `, [yearMonth]);
 
-    const result: any[] = rows.map(b => {
-      const reports: any[] = queryAll('SELECT report_no FROM test_reports WHERE batch_id = ?', [b.id]);
-      const reportNos = reports.map(r => r.report_no);
+    const result: any[] = batches.map(b => {
+      const samplings: any[] = queryAll(`
+        SELECT s.id, s.sample_no, s.sampling_date, s.sealing_photo, s.is_sent, s.sent_date, s.testing_agency
+        FROM sampling_records s WHERE s.batch_id = ?
+        ORDER BY s.sampling_date ASC
+      `, [b.id]);
+
+      const reports: any[] = queryAll(`
+        SELECT r.id, r.report_no, r.report_date, r.conclusion, r.unqualified_items, r.sampling_id
+        FROM test_reports r WHERE r.batch_id = ?
+        ORDER BY r.report_date ASC
+      `, [b.id]);
+
+      const disposals: any[] = queryAll(`
+        SELECT d.id, d.disposal_opinion, d.retest_plan, d.retest_sample_no, d.retest_testing_agency,
+          d.retest_report_no, d.retest_conclusion, d.retest_date, d.final_result, d.final_date
+        FROM disposal_records d WHERE d.batch_id = ?
+        ORDER BY d.created_at DESC
+      `, [b.id]);
+
       const abnormal = b.status === '待处置' || b.status === '禁止使用';
-      const hasDisposal = b.disposal_count > 0;
+      const hasDisposal = disposals.length > 0;
+      const hasPhoto = samplings.length > 0 && samplings.every(s => s.sealing_photo && s.sealing_photo !== '');
+      const allSent = samplings.length > 0 && samplings.every(s => s.is_sent === 1);
       const complete = (
-        b.sampling_count > 0 &&
-        b.photo_count >= b.sampling_count &&
-        b.sent_count >= b.sampling_count &&
-        b.report_count > 0 &&
+        samplings.length > 0 &&
+        hasPhoto &&
+        allSent &&
+        reports.length > 0 &&
         (!abnormal || hasDisposal)
       );
+
       return {
         batch_id: b.id,
         material_type: b.material_type,
         batch_no: b.batch_no,
+        quantity: b.quantity,
+        furnace_no: b.furnace_no,
+        represent_quantity: b.represent_quantity,
+        sampling_location: b.sampling_location,
         entry_date: b.entry_date,
         has_entry: true,
-        sampling_count: b.sampling_count,
-        has_sealing_photo: b.photo_count >= b.sampling_count,
-        sent_count: b.sent_count,
-        report_count: b.report_count,
-        report_nos: reportNos,
-        has_disposal: hasDisposal,
+        has_sealing_photo: hasPhoto,
         status: b.status,
-        complete: complete ? 1 : 0,
+        complete,
+        samplings: samplings.map(s => ({
+          sample_no: s.sample_no,
+          sampling_date: s.sampling_date,
+          has_photo: !!(s.sealing_photo && s.sealing_photo !== ''),
+          is_sent: s.is_sent === 1,
+          sent_date: s.sent_date || '',
+          testing_agency: s.testing_agency,
+        })),
+        reports: reports.map(r => ({
+          report_no: r.report_no,
+          report_date: r.report_date,
+          conclusion: r.conclusion,
+          unqualified_items: r.unqualified_items || '',
+        })),
+        disposals: disposals.map(d => ({
+          disposal_opinion: d.disposal_opinion,
+          retest_plan: d.retest_plan || '',
+          retest_sample_no: d.retest_sample_no || '',
+          retest_testing_agency: d.retest_testing_agency || '',
+          retest_report_no: d.retest_report_no || '',
+          retest_conclusion: d.retest_conclusion || '',
+          retest_date: d.retest_date || '',
+          final_result: d.final_result || '',
+          final_date: d.final_date || '',
+        })),
       };
     });
     return result;
@@ -351,54 +383,76 @@ function registerIpcHandlers() {
   ipcMain.handle('export:transferCsv', async (_e, yearMonth: string) => {
     const list: any[] = await new Promise((resolve) => {
       const db = getDb();
-      const stmt = db.prepare(`
-        SELECT m.*,
-          (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id) as sampling_count,
-          (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id AND s.sealing_photo IS NOT NULL AND s.sealing_photo != '') as photo_count,
-          (SELECT COUNT(*) FROM sampling_records s WHERE s.batch_id = m.id AND s.is_sent = 1) as sent_count,
-          (SELECT COUNT(*) FROM test_reports r WHERE r.batch_id = m.id) as report_count,
-          (SELECT COUNT(*) FROM disposal_records d WHERE d.batch_id = m.id) as disposal_count
-        FROM material_batches m
+      const stmt = db.prepare(`SELECT m.* FROM material_batches m
         WHERE substr(m.entry_date, 1, 7) = ?
-        ORDER BY m.entry_date ASC, m.material_type ASC
-      `);
+        ORDER BY m.entry_date ASC, m.material_type ASC`);
       stmt.bind([yearMonth]);
       const rows: any[] = [];
       while (stmt.step()) rows.push(stmt.getAsObject() as any);
       stmt.free();
 
       const result = rows.map(b => {
-        const reports: any[] = queryAll('SELECT report_no FROM test_reports WHERE batch_id = ?', [b.id]);
-        const abnormal = b.status === '待处置' || b.status === '禁止使用';
-        const hasDisposal = b.disposal_count > 0;
-        const complete = (
-          b.sampling_count > 0 &&
-          b.photo_count >= b.sampling_count &&
-          b.sent_count >= b.sampling_count &&
-          b.report_count > 0 &&
-          (!abnormal || hasDisposal)
-        );
+        const samplings: any[] = queryAll(`
+          SELECT s.sample_no, s.sampling_date, s.sealing_photo, s.is_sent, s.sent_date, s.testing_agency
+          FROM sampling_records s WHERE s.batch_id = ? ORDER BY s.sampling_date ASC`, [b.id]);
+        const reports: any[] = queryAll(`
+          SELECT r.report_no, r.report_date, r.conclusion, r.unqualified_items
+          FROM test_reports r WHERE r.batch_id = ? ORDER BY r.report_date ASC`, [b.id]);
+        const disposals: any[] = queryAll(`
+          SELECT d.disposal_opinion, d.retest_plan, d.retest_sample_no, d.retest_testing_agency,
+            d.retest_report_no, d.retest_conclusion, d.retest_date, d.final_result, d.final_date
+          FROM disposal_records d WHERE d.batch_id = ? ORDER BY d.created_at DESC`, [b.id]);
         return {
-          material_type: b.material_type, batch_no: b.batch_no, entry_date: b.entry_date,
-          has_entry: true, sampling_count: b.sampling_count,
-          has_sealing_photo: b.photo_count >= b.sampling_count,
-          sent_count: b.sent_count, report_count: b.report_count,
-          report_nos: reports.map((r: any) => r.report_no),
-          has_disposal: hasDisposal, status: b.status, complete
+          material_type: b.material_type, batch_no: b.batch_no,
+          quantity: b.quantity, furnace_no: b.furnace_no,
+          sampling_location: b.sampling_location, entry_date: b.entry_date,
+          status: b.status,
+          samplings: samplings.map(s => ({
+            sample_no: s.sample_no, sampling_date: s.sampling_date,
+            has_photo: !!(s.sealing_photo && s.sealing_photo !== ''),
+            is_sent: s.is_sent === 1, sent_date: s.sent_date || '',
+            testing_agency: s.testing_agency,
+          })),
+          reports: reports.map(r => ({
+            report_no: r.report_no, report_date: r.report_date,
+            conclusion: r.conclusion, unqualified_items: r.unqualified_items || '',
+          })),
+          disposals,
         };
       });
       resolve(result);
     });
 
-    const headers = ['材料类型', '批次编号', '进场日期', '进场记录', '取样数', '封样照片', '已送检', '报告数', '报告编号', '异常处置', '批次状态', '资料齐全'];
-    const rows = list.map((b: any) => [
-      b.material_type, b.batch_no, b.entry_date, b.has_entry ? '✓' : '',
-      b.sampling_count, b.has_sealing_photo ? '✓' : '缺',
-      `${b.sent_count}/${b.sampling_count}`, b.report_count,
-      (b.report_nos || []).join('、'),
-      (b.status === '待处置' || b.status === '禁止使用') ? (b.has_disposal ? '已登记' : '待处置') : '',
-      b.status, b.complete ? '齐全' : '缺项'
-    ]);
+    const headers = ['材料类型', '批次编号', '进场日期', '进场数量', '炉批号', '取样部位',
+      '样品编号', '取样日期', '封样照片', '送检日期', '检测机构',
+      '报告编号', '报告日期', '检测结论', '不合格项',
+      '异常处置', '复检安排', '复检样品', '复检机构', '复检报告', '复检结论', '复检日期', '最终结果', '闭环日期'];
+    const rows: any[][] = [];
+    for (const b of list) {
+      const maxRows = Math.max(b.samplings.length, b.reports.length, b.disposals.length, 1);
+      for (let i = 0; i < maxRows; i++) {
+        const s = b.samplings[i] || {};
+        const r = b.reports[i] || {};
+        const d = b.disposals[i] || {};
+        rows.push([
+          i === 0 ? b.material_type : '',
+          i === 0 ? b.batch_no : '',
+          i === 0 ? b.entry_date : '',
+          i === 0 ? b.quantity : '',
+          i === 0 ? (b.furnace_no || '') : '',
+          i === 0 ? b.sampling_location : '',
+          s.sample_no || '', s.sampling_date || '',
+          s.has_photo ? '有' : (s.sample_no ? '缺' : ''),
+          s.is_sent ? (s.sent_date || '已送') : (s.sample_no ? '未送' : ''),
+          s.testing_agency || '',
+          r.report_no || '', r.report_date || '', r.conclusion || '', r.unqualified_items || '',
+          i === 0 ? (d.disposal_opinion || '') : '',
+          d.retest_plan || '', d.retest_sample_no || '', d.retest_testing_agency || '',
+          d.retest_report_no || '', d.retest_conclusion || '', d.retest_date || '',
+          d.final_result || '', d.final_date || '',
+        ]);
+      }
+    }
     const csv = [headers, ...rows].map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(',')).join('\r\n');
     return '\ufeff' + csv;
   });

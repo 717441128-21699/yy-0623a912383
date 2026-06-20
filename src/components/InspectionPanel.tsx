@@ -32,6 +32,7 @@ export default function InspectionPanel({ onDataChange }: Props) {
     testing_agency: '',
     sampling_date: new Date().toISOString().slice(0, 10),
   });
+  const [samplingOperator, setSamplingOperator] = useState('');
 
   const loadData = async (keyword?: string) => {
     const [batches, allS, overdueS, pendingS] = await Promise.all([
@@ -102,7 +103,7 @@ export default function InspectionPanel({ onDataChange }: Props) {
         sampling_date: form.sampling_date,
         is_sent: 0,
         deadline_date: deadline,
-      });
+      }, samplingOperator || undefined);
 
       setShowAdd(false);
       setPhotoData('');
@@ -122,9 +123,10 @@ export default function InspectionPanel({ onDataChange }: Props) {
   };
 
   const handleMarkSent = async (id: number) => {
+    const op = prompt('请输入经办人姓名（可留空）：') || '';
     if (!confirm('确认标记为已送检？')) return;
     try {
-      await window.api.sampling.markAsSent(id, new Date().toISOString().slice(0, 10));
+      await window.api.sampling.markAsSent(id, new Date().toISOString().slice(0, 10), op || undefined);
       loadData();
       onDataChange();
     } catch (e: any) {
@@ -331,6 +333,10 @@ export default function InspectionPanel({ onDataChange }: Props) {
                 <div className="form-item">
                   <label><span className="required">*</span>送检机构</label>
                   <input value={form.testing_agency} onChange={e => setForm({ ...form, testing_agency: e.target.value })} placeholder="检测单位名称" />
+                </div>
+                <div className="form-item">
+                  <label>经办人</label>
+                  <input value={samplingOperator} onChange={e => setSamplingOperator(e.target.value)} placeholder="填写经办人姓名" />
                 </div>
               </div>
               <div className="form-row">

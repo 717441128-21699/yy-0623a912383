@@ -14,6 +14,7 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
   const [subView, setSubView] = useState<SubView>('summary');
   const [summary, setSummary] = useState<MonthlySummaryItem[]>([]);
   const [transferList, setTransferList] = useState<TransferDocItem[]>([]);
+  const [expandedBatchId, setExpandedBatchId] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -325,75 +326,122 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
                     </div>
                   </div>
 
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>材料类型</th>
-                        <th>批次编号</th>
-                        <th>进场日期</th>
-                        <th>进场记录</th>
-                        <th>取样</th>
-                        <th>封样照片</th>
-                        <th>送检</th>
-                        <th>检测报告</th>
-                        <th>报告编号</th>
-                        <th>异常处置</th>
-                        <th>批次状态</th>
-                        <th>资料齐全</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transferList.map(b => (
-                        <tr key={b.batch_id}>
-                          <td>{b.material_type}</td>
-                          <td>{b.batch_no}</td>
-                          <td>{b.entry_date}</td>
-                          <td>{b.has_entry ? <span className="sub-tag tag-ok">✓</span> : <span className="sub-tag tag-miss">缺</span>}</td>
-                          <td>{b.sampling_count > 0 ? `${b.sampling_count}次` : <span className="sub-tag tag-miss">缺</span>}</td>
-                          <td>
-                            {b.sampling_count === 0 ? '-' : (
-                              b.has_sealing_photo ? <span className="sub-tag tag-ok">齐全</span> : <span className="sub-tag tag-miss">缺</span>
-                            )}
-                          </td>
-                          <td>
-                            {b.sampling_count === 0 ? '-' : (
-                              b.sent_count >= b.sampling_count ? <span className="sub-tag tag-ok">全送</span> : <span className="sub-tag tag-warn">{b.sent_count}/{b.sampling_count}</span>
-                            )}
-                          </td>
-                          <td>{b.report_count > 0 ? `${b.report_count}份` : <span className="sub-tag tag-miss">缺</span>}</td>
-                          <td style={{ fontSize: '12px', maxWidth: 150 }}>
-                            {b.report_nos.length > 0 ? b.report_nos.join('、') : '-'}
-                          </td>
-                          <td>
-                            {(b.status === '待处置' || b.status === '禁止使用') ? (
-                              b.has_disposal ? <span className="sub-tag tag-ok">已登记</span> : <span className="sub-tag tag-miss">待处置</span>
-                            ) : '-'}
-                          </td>
-                          <td>
-                            <span className={`status-tag ${
-                              b.status === '可用' ? 'status-ok' :
-                              b.status === '禁止使用' ? 'status-bad' :
-                              b.status === '待处置' ? 'status-todo' :
-                              b.status === '已送检待报告' ? 'status-sent' : 'status-sampled'
-                            }`}>
-                              {b.status}
-                            </span>
-                          </td>
-                          <td>
-                            {b.complete ? (
-                              <span className="sub-tag tag-ok">齐全</span>
-                            ) : (
-                              <span className="sub-tag tag-miss">缺项</span>
-                            )}
-                          </td>
-                          <td>
-                            <button className="btn btn-sm btn-default" onClick={() => onViewBatchDetail(b.batch_id)}>查看详情</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {transferList.map(b => {
+                    const isExpanded = expandedBatchId === b.batch_id;
+                    const maxRows = Math.max(b.samplings.length, b.reports.length, b.disposals.length, 1);
+                    const showDisposal = b.status === '待处置' || b.status === '禁止使用';
+                    return (
+                      <div key={b.batch_id} style={{ marginBottom: '8px', border: '1px solid #ebeef5', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: isExpanded ? '#f5f7fa' : '#fff',
+                            cursor: 'pointer',
+                            gap: '12px',
+                          }}
+                          onClick={() => setExpandedBatchId(isExpanded ? null : b.batch_id)}
+                        >
+                          <span style={{ fontSize: '12px', color: '#909399', width: '16px', textAlign: 'center' }}>
+                            {isExpanded ? '▼' : '▶'}
+                          </span>
+                          <span style={{ minWidth: '80px' }}>{b.material_type}</span>
+                          <span style={{ minWidth: '120px', fontWeight: 500 }}>{b.batch_no}</span>
+                          <span style={{ minWidth: '90px', color: '#909399', fontSize: '12px' }}>{b.entry_date}</span>
+                          <span className={`status-tag ${
+                            b.status === '可用' ? 'status-ok' :
+                            b.status === '禁止使用' ? 'status-bad' :
+                            b.status === '待处置' ? 'status-todo' :
+                            b.status === '已送检待报告' ? 'status-sent' : 'status-sampled'
+                          }`}>
+                            {b.status}
+                          </span>
+                          {b.complete ? (
+                            <span className="sub-tag tag-ok">齐全</span>
+                          ) : (
+                            <span className="sub-tag tag-miss">缺项</span>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div style={{ padding: '12px 14px', borderTop: '1px solid #ebeef5' }}>
+                            <div style={{ display: 'flex', gap: '24px', marginBottom: '12px', fontSize: '13px', color: '#606266', flexWrap: 'wrap' }}>
+                              <span>进场数量：<b>{b.quantity}</b></span>
+                              {b.furnace_no && <span>炉批号：<b>{b.furnace_no}</b></span>}
+                              <span>代表数量：<b>{b.represent_quantity}</b></span>
+                              <span>取样部位：<b>{b.sampling_location}</b></span>
+                              <span>进场记录：{b.has_entry ? <span className="sub-tag tag-ok">有</span> : <span className="sub-tag tag-miss">缺</span>}</span>
+                              <span>封样照片：{b.has_sealing_photo ? <span className="sub-tag tag-ok">有</span> : <span className="sub-tag tag-miss">缺</span>}</span>
+                            </div>
+                            <table className="data-table" style={{ fontSize: '12px' }}>
+                              <thead>
+                                <tr>
+                                  <th rowSpan={2} style={{ width: '30px' }}>#</th>
+                                  <th colSpan={5} style={{ textAlign: 'center', background: '#ecf5ff' }}>取样信息</th>
+                                  <th colSpan={4} style={{ textAlign: 'center', background: '#f0f9eb' }}>报告信息</th>
+                                  {showDisposal && <th colSpan={7} style={{ textAlign: 'center', background: '#fef0f0' }}>处置信息</th>}
+                                </tr>
+                                <tr>
+                                  <th>样品编号</th>
+                                  <th>取样日期</th>
+                                  <th>封样照片</th>
+                                  <th>送检日期</th>
+                                  <th>检测机构</th>
+                                  <th>报告编号</th>
+                                  <th>报告日期</th>
+                                  <th>检测结论</th>
+                                  <th>不合格项</th>
+                                  {showDisposal && (
+                                    <>
+                                      <th>处置意见</th>
+                                      <th>复检安排</th>
+                                      <th>复检样品</th>
+                                      <th>复检报告</th>
+                                      <th>复检结论</th>
+                                      <th>最终结果</th>
+                                      <th>闭环日期</th>
+                                    </>
+                                  )}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Array.from({ length: maxRows }, (_, i) => {
+                                  const s = b.samplings[i];
+                                  const r = b.reports[i];
+                                  const d = showDisposal ? b.disposals[i] : undefined;
+                                  return (
+                                    <tr key={i}>
+                                      <td style={{ textAlign: 'center', color: '#909399' }}>{i + 1}</td>
+                                      <td>{s?.sample_no ?? ''}</td>
+                                      <td>{s?.sampling_date ?? ''}</td>
+                                      <td>{s ? (s.has_photo ? <span className="sub-tag tag-ok">有</span> : <span className="sub-tag tag-miss">缺</span>) : ''}</td>
+                                      <td>{s ? (s.is_sent ? (s.sent_date || '已送') : <span className="sub-tag tag-miss">未送</span>) : ''}</td>
+                                      <td>{s?.testing_agency ?? ''}</td>
+                                      <td>{r?.report_no ?? ''}</td>
+                                      <td>{r?.report_date ?? ''}</td>
+                                      <td>{r ? (r.conclusion === '合格' ? <span className="sub-tag tag-ok">合格</span> : <span className="sub-tag tag-miss">不合格</span>) : ''}</td>
+                                      <td>{r?.unqualified_items ?? ''}</td>
+                                      {showDisposal && (
+                                        <>
+                                          <td>{d?.disposal_opinion ?? ''}</td>
+                                          <td>{d?.retest_plan ?? ''}</td>
+                                          <td>{d?.retest_sample_no ?? ''}</td>
+                                          <td>{d?.retest_report_no ?? ''}</td>
+                                          <td>{d?.retest_conclusion ?? ''}</td>
+                                          <td>{d?.final_result ?? ''}</td>
+                                          <td>{d?.final_date ?? ''}</td>
+                                        </>
+                                      )}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
 
                   <div style={{
                     marginTop: '14px',

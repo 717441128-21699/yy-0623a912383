@@ -56,6 +56,11 @@ export interface DisposalRecord {
   batch_id: number;
   disposal_opinion: string;
   retest_plan?: string;
+  retest_sample_no?: string;
+  retest_testing_agency?: string;
+  retest_report_no?: string;
+  retest_conclusion?: string;
+  retest_date?: string;
   final_result: string;
   disposal_date: string;
   final_date?: string;
@@ -146,6 +151,11 @@ export async function initDatabase() {
       batch_id INTEGER NOT NULL,
       disposal_opinion TEXT NOT NULL,
       retest_plan TEXT,
+      retest_sample_no TEXT,
+      retest_testing_agency TEXT,
+      retest_report_no TEXT,
+      retest_conclusion TEXT,
+      retest_date TEXT,
       final_result TEXT,
       disposal_date TEXT NOT NULL,
       final_date TEXT,
@@ -299,10 +309,13 @@ export const disposalQueries = {
     queryOne('SELECT * FROM disposal_records WHERE id = ?', [id]) as DisposalRecord | null,
   create: (data: Omit<DisposalRecord, 'id' | 'created_at'>): number => {
     const stmt = db.prepare(`INSERT INTO disposal_records
-      (batch_id, disposal_opinion, retest_plan, final_result, disposal_date, final_date, operator)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+      (batch_id, disposal_opinion, retest_plan, retest_sample_no, retest_testing_agency, retest_report_no, retest_conclusion, retest_date, final_result, disposal_date, final_date, operator)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     stmt.run([
       data.batch_id, data.disposal_opinion, data.retest_plan || null,
+      data.retest_sample_no || null, data.retest_testing_agency || null,
+      data.retest_report_no || null, data.retest_conclusion || null,
+      data.retest_date || null,
       data.final_result || null, data.disposal_date, data.final_date || null,
       data.operator || null,
     ]);
@@ -317,6 +330,11 @@ export const disposalQueries = {
     const map: Record<string, any> = {
       disposal_opinion: data.disposal_opinion,
       retest_plan: data.retest_plan,
+      retest_sample_no: data.retest_sample_no,
+      retest_testing_agency: data.retest_testing_agency,
+      retest_report_no: data.retest_report_no,
+      retest_conclusion: data.retest_conclusion,
+      retest_date: data.retest_date,
       final_result: data.final_result,
       disposal_date: data.disposal_date,
       final_date: data.final_date,

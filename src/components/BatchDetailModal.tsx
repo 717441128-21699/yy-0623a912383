@@ -245,6 +245,18 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
                           <span className="label">复检安排：</span><span className="value">{d.retest_plan}</span>
                         </div>
                       )}
+                      {(d.retest_sample_no || d.retest_report_no) && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">复检结果：</span>
+                          <span className="value">
+                            {d.retest_sample_no && `样品 ${d.retest_sample_no}`}
+                            {d.retest_testing_agency && ` / ${d.retest_testing_agency}`}
+                            {d.retest_report_no && ` / 报告 ${d.retest_report_no}`}
+                            {d.retest_conclusion && ` / 结论：${d.retest_conclusion}`}
+                            {d.retest_date && ` / ${d.retest_date}`}
+                          </span>
+                        </div>
+                      )}
                       {d.final_result && (
                         <div style={{ gridColumn: '1 / -1' }}>
                           <span className="label">最终处理结果：</span><span className="value">{d.final_result}</span>
@@ -276,6 +288,7 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
                     <div key={log.id} className={`timeline-item ${cls}`}>
                       <div className="timeline-time">{log.created_at}</div>
                       <div className="timeline-action">{log.action}</div>
+                      {log.operator && <div className="timeline-desc">经办人：{log.operator}</div>}
                       {log.description && <div className="timeline-desc">{log.description}</div>}
                     </div>
                   );

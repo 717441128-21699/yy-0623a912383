@@ -32,6 +32,7 @@ export default function ReportPanel({ onDataChange }: Props) {
     unqualified_items: '',
     report_date: new Date().toISOString().slice(0, 10),
   });
+  const [reportOperator, setReportOperator] = useState('');
 
   const loadData = async (keyword?: string) => {
     const [r, allS] = await Promise.all([
@@ -82,7 +83,7 @@ export default function ReportPanel({ onDataChange }: Props) {
         conclusion: form.conclusion,
         unqualified_items: form.unqualified_items.trim() || undefined,
         report_date: form.report_date,
-      });
+      }, reportOperator || undefined);
 
       setShowAdd(false);
       setFormErrors([]);
@@ -274,6 +275,10 @@ export default function ReportPanel({ onDataChange }: Props) {
                     <option value="合格">合格</option>
                     <option value="不合格">不合格</option>
                   </select>
+                </div>
+                <div className="form-item">
+                  <label>经办人</label>
+                  <input value={reportOperator} onChange={e => setReportOperator(e.target.value)} placeholder="填写经办人姓名" />
                 </div>
               </div>
               {form.conclusion === '不合格' && (

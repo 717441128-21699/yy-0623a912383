@@ -4,7 +4,7 @@ contextBridge.exposeInMainWorld('api', {
   batch: {
     getAll: () => ipcRenderer.invoke('batch:getAll'),
     getByStatus: (status: string) => ipcRenderer.invoke('batch:getByStatus', status),
-    create: (data: any) => ipcRenderer.invoke('batch:create', data),
+    create: (data: any, operator?: string) => ipcRenderer.invoke('batch:create', data, operator),
     delete: (id: number) => ipcRenderer.invoke('batch:delete', id),
     getDetail: (id: number) => ipcRenderer.invoke('batch:getDetail', id),
     getMonthlySummary: (yearMonth?: string) => ipcRenderer.invoke('batch:getMonthlySummary', yearMonth),
@@ -15,13 +15,13 @@ contextBridge.exposeInMainWorld('api', {
     getByBatchId: (batchId: number) => ipcRenderer.invoke('sampling:getByBatchId', batchId),
     getPendingSend: (keyword?: string) => ipcRenderer.invoke('sampling:getPendingSend', keyword),
     getOverdue: () => ipcRenderer.invoke('sampling:getOverdue'),
-    create: (data: any) => ipcRenderer.invoke('sampling:create', data),
-    markAsSent: (id: number, sentDate: string) => ipcRenderer.invoke('sampling:markAsSent', id, sentDate),
+    create: (data: any, operator?: string) => ipcRenderer.invoke('sampling:create', data, operator),
+    markAsSent: (id: number, sentDate: string, operator?: string) => ipcRenderer.invoke('sampling:markAsSent', id, sentDate, operator),
   },
   report: {
     getAll: (keyword?: string) => ipcRenderer.invoke('report:getAll', keyword),
     getByBatchId: (batchId: number) => ipcRenderer.invoke('report:getByBatchId', batchId),
-    create: (data: any) => ipcRenderer.invoke('report:create', data),
+    create: (data: any, operator?: string) => ipcRenderer.invoke('report:create', data, operator),
   },
   disposal: {
     getAll: () => ipcRenderer.invoke('disposal:getAll'),

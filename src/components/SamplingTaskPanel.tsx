@@ -36,6 +36,7 @@ export default function SamplingTaskPanel({ onDataChange }: Props) {
     sampling_location: '',
     entry_date: new Date().toISOString().slice(0, 10),
   });
+  const [operator, setOperator] = useState('');
 
   const loadData = async () => {
     const data = await window.api.batch.getAll();
@@ -62,7 +63,7 @@ export default function SamplingTaskPanel({ onDataChange }: Props) {
         represent_quantity: Number(form.represent_quantity),
         sampling_location: form.sampling_location,
         entry_date: form.entry_date,
-      });
+      }, operator || undefined);
       setShowAdd(false);
       setForm({
         material_type: '钢筋原材',
@@ -247,6 +248,10 @@ export default function SamplingTaskPanel({ onDataChange }: Props) {
                 <div className="form-item">
                   <label><span className="required">*</span>进场日期</label>
                   <input type="date" value={form.entry_date} onChange={e => setForm({ ...form, entry_date: e.target.value })} />
+                </div>
+                <div className="form-item">
+                  <label>经办人</label>
+                  <input value={operator} onChange={e => setOperator(e.target.value)} placeholder="填写经办人姓名" />
                 </div>
               </div>
               <div style={{ fontSize: '12px', color: '#909399', marginTop: '6px' }}>
