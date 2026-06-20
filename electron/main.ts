@@ -266,6 +266,15 @@ function registerIpcHandlers() {
 
   ipcMain.handle('disposal:getAll', () => disposalQueries.getAll());
   ipcMain.handle('disposal:getByBatchId', (_e, batchId: number) => disposalQueries.getByBatchId(batchId));
+
+  function updateBatchStatusByFinalResult(batchId: number, finalResult?: string) {
+    if (!finalResult) return;
+    const r = finalResult.trim();
+    if (r === '放行') batchQueries.updateStatus(batchId, '已放行');
+    else if (r === '降级使用') batchQueries.updateStatus(batchId, '已降级使用');
+    else if (r === '退场') batchQueries.updateStatus(batchId, '已退场');
+  }
+
   ipcMain.handle('disposal:create', (_e, data) => {
     if (!data.disposal_opinion || !data.disposal_opinion.trim()) {
       throw new Error('处置意见不能为空');
@@ -277,8 +286,10 @@ function registerIpcHandlers() {
     logQueries.create({
       batch_id: data.batch_id,
       action: '异常处置登记',
-      description: `处置意见：${data.disposal_opinion}${data.retest_plan ? '，复检安排：' + data.retest_plan : ''}`
+      description: `处置意见：${data.disposal_opinion}${data.retest_plan ? '，复检安排：' + data.retest_plan : ''}${data.retest_report_no ? '，复检报告：' + data.retest_report_no : ''}${data.final_result ? '，最终结果：' + data.final_result : ''}`,
+      operator: data.operator || undefined,
     });
+    if (data.final_result) updateBatchStatusByFinalResult(data.batch_id, data.final_result);
     return id;
   });
   ipcMain.handle('disposal:update', (_e, id: number, data) => {
@@ -288,8 +299,13 @@ function registerIpcHandlers() {
       logQueries.create({
         batch_id: disp.batch_id,
         action: '异常处置更新',
-        description: data.final_result ? `最终处理结果：${data.final_result}` : '处置信息已更新'
+        description: data.final_result
+          ? `最终处理结果：${data.final_result}${data.retest_report_no ? '，复检报告：' + data.retest_report_no : ''}`
+          : (data.retest_report_no ? `复检报告回填：${data.retest_report_no}` : '处置信息已更新'),
+        operator: data.operator || undefined,
       });
+      const finalR = data.final_result || disp.final_result;
+      if (finalR) updateBatchStatusByFinalResult(disp.batch_id, finalR);
     }
   });
 
@@ -450,6 +466,216 @@ function registerIpcHandlers() {
           d.retest_plan || '', d.retest_sample_no || '', d.retest_testing_agency || '',
           d.retest_report_no || '', d.retest_conclusion || '', d.retest_date || '',
           d.final_result || '', d.final_date || '',
+        ]);
+      }
+    }
+    const csv = [headers, ...rows].map(row => row.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    return '\ufeff' + csv;
+  });
+
+  ipcMain.handle('batch:getArchivePackage', (_e, yearMonth: string) => {
+    const batches: any[] = queryAll(`
+      SELECT m.* FROM material_batches m
+      WHERE substr(m.entry_date, 1, 7) = ?
+      ORDER BY m.entry_date ASC, m.material_type ASC
+    `, [yearMonth]);
+
+    return batches.map(b => {
+      const samplings: any[] = queryAll(`
+        SELECT s.id, s.sample_no, s.sampling_date, s.sealing_photo, s.is_sent, s.sent_date, s.testing_agency
+        FROM sampling_records s WHERE s.batch_id = ?
+        ORDER BY s.sampling_date ASC
+      `, [b.id]);
+
+      const reports: any[] = queryAll(`
+        SELECT r.id, r.report_no, r.report_date, r.conclusion, r.unqualified_items, r.sampling_id
+        FROM test_reports r WHERE r.batch_id = ?
+        ORDER BY r.report_date ASC
+      `, [b.id]);
+
+      const disposals: any[] = queryAll(`
+        SELECT d.* FROM disposal_records d WHERE d.batch_id = ?
+        ORDER BY d.created_at DESC
+      `, [b.id]);
+
+      const logs: any[] = queryAll(`
+        SELECT l.* FROM operation_logs l WHERE l.batch_id = ?
+        ORDER BY l.created_at ASC
+      `, [b.id]);
+
+      const logOfAction = (act: string) => logs.find(l => l.action === act);
+      const abnormal = ['待处置', '禁止使用', '已放行', '已降级使用', '已退场'].includes(b.status);
+
+      const entryLog = logOfAction('新增进场登记');
+      const samplingLogs = logs.filter(l => l.action === '完成取样');
+      const sentLogs = logs.filter(l => l.action === '标记送检');
+      const reportLogs = logs.filter(l => l.action === '录入检测报告');
+      const dispLog = logs.find(l => l.action === '异常处置登记');
+      const dispUpdateLog = logs.find(l => l.action === '异常处置更新');
+
+      // 判定归档链
+      const chain: any = {
+        entry: {
+          name: '进场登记',
+          status: 'ok',
+          detail: `${b.material_type} ${b.batch_no} 进量 ${b.quantity}`,
+          operator: entryLog?.operator,
+          time: b.entry_date || entryLog?.created_at,
+        },
+        samplings: samplings.map((s, i) => ({
+          name: `取样 ${i + 1}`,
+          status: s.sample_no ? 'ok' : 'miss',
+          detail: `${s.sample_no} ${s.sampling_date}`,
+          operator: samplingLogs[i]?.operator,
+          time: s.sampling_date,
+        })),
+        photos: samplings.map((s, i) => ({
+          name: `封样照片 ${i + 1}`,
+          status: s.sealing_photo && s.sealing_photo !== '' ? 'ok' : 'miss',
+          detail: s.sample_no,
+          operator: samplingLogs[i]?.operator,
+          time: s.sampling_date,
+        })),
+        sendings: samplings.map((s, i) => ({
+          name: `送检 ${i + 1}`,
+          status: s.is_sent ? 'ok' : 'miss',
+          detail: s.is_sent ? `${s.sample_no} ${s.sent_date || ''} ${s.testing_agency || ''}` : `${s.sample_no} 待送`,
+          operator: sentLogs[i]?.operator,
+          time: s.sent_date,
+        })),
+        originalReports: reports.map((r, i) => ({
+          name: `检测报告 ${i + 1}`,
+          status: r.conclusion === '合格' ? 'ok' : 'warn',
+          detail: `${r.report_no} ${r.report_date} 结论:${r.conclusion}${r.unqualified_items ? ' ' + r.unqualified_items : ''}`,
+          operator: reportLogs[i]?.operator,
+          time: r.report_date,
+        })),
+        retestReports: disposals.filter(d => d.retest_report_no || d.retest_sample_no).map(d => ({
+          name: '复检资料',
+          status: d.retest_conclusion === '合格' ? 'ok' : (d.retest_conclusion === '不合格' ? 'warn' : 'miss'),
+          detail: [
+            d.retest_sample_no && `样品:${d.retest_sample_no}`,
+            d.retest_testing_agency && d.retest_testing_agency,
+            d.retest_report_no && `报告:${d.retest_report_no}`,
+            d.retest_conclusion && `结论:${d.retest_conclusion}`,
+            d.retest_date,
+          ].filter(Boolean).join(' '),
+          operator: d.operator || dispUpdateLog?.operator,
+          time: d.retest_date,
+        })),
+        disposal: !abnormal ? { name: '异常处置', status: 'ok' as const, detail: '正常批次' } : (
+          disposals.length > 0
+            ? { name: '异常处置', status: 'ok' as const, detail: disposals[0].disposal_opinion, operator: disposals[0].operator || dispLog?.operator, time: disposals[0].disposal_date }
+            : { name: '异常处置', status: 'miss' as const, detail: '未登记处置意见' }
+        ),
+        finalResult: !abnormal ? { name: '最终结果', status: 'ok' as const, detail: '正常使用' } : (
+          disposals.length > 0 && disposals[0].final_result
+            ? { name: '最终结果', status: 'ok' as const, detail: disposals[0].final_result, operator: disposals[0].operator || dispUpdateLog?.operator, time: disposals[0].final_date }
+            : { name: '最终结果', status: 'miss' as const, detail: '未闭环' }
+        ),
+      };
+
+      const missing: string[] = [];
+      if (samplings.length === 0) missing.push('无取样记录');
+      samplings.forEach((s, i) => {
+        if (!s.sealing_photo) missing.push(`取样 ${i + 1} 缺封样照片`);
+        if (!s.is_sent) missing.push(`取样 ${i + 1} 未送检`);
+      });
+      if (reports.length === 0) missing.push('无检测报告');
+      if (abnormal) {
+        if (disposals.length === 0) missing.push('无异常处置记录');
+        if (disposals.length === 0 || !disposals[0].final_result) missing.push('未填写最终结果');
+      }
+
+      return {
+        batch_id: b.id,
+        material_type: b.material_type,
+        batch_no: b.batch_no,
+        quantity: b.quantity,
+        furnace_no: b.furnace_no,
+        represent_quantity: b.represent_quantity,
+        sampling_location: b.sampling_location,
+        entry_date: b.entry_date,
+        status: b.status,
+        can_bind: missing.length === 0,
+        missing_reasons: missing,
+        chain,
+      };
+    });
+  });
+
+  ipcMain.handle('export:archiveCsv', async (_e, yearMonth: string) => {
+    const batches: any[] = queryAll(`
+      SELECT m.* FROM material_batches m
+      WHERE substr(m.entry_date, 1, 7) = ?
+      ORDER BY m.entry_date ASC, m.material_type ASC
+    `, [yearMonth]);
+
+    const headers = ['材料类型', '批次编号', '进场日期', '进场数量', '炉批号', '取样部位', '批次状态',
+      '进场(经办人)', '进场(时间)',
+      '样品编号', '取样日期', '取样经办人', '封样照片', '送检日期', '送检经办人', '检测机构',
+      '原报告编号', '原报告结论', '原报告经办人',
+      '复检样品', '复检机构', '复检报告', '复检结论', '复检日期',
+      '处置意见', '处置经办人', '最终结果', '闭环经办人', '能否装订', '缺失说明'];
+
+    const rows: any[][] = [];
+    for (const b of batches) {
+      const samplings: any[] = queryAll(`SELECT s.* FROM sampling_records s WHERE s.batch_id = ? ORDER BY s.sampling_date ASC`, [b.id]);
+      const reports: any[] = queryAll(`SELECT r.* FROM test_reports r WHERE r.batch_id = ? ORDER BY r.report_date ASC`, [b.id]);
+      const disposals: any[] = queryAll(`SELECT d.* FROM disposal_records d WHERE d.batch_id = ? ORDER BY d.created_at DESC`, [b.id]);
+      const logs: any[] = queryAll(`SELECT l.* FROM operation_logs l WHERE l.batch_id = ? ORDER BY l.created_at ASC`, [b.id]);
+      const entryLog = logs.find(l => l.action === '新增进场登记');
+      const samplingLogs = logs.filter(l => l.action === '完成取样');
+      const sentLogs = logs.filter(l => l.action === '标记送检');
+      const reportLogs = logs.filter(l => l.action === '录入检测报告');
+      const dispLogs = logs.filter(l => l.action === '异常处置登记' || l.action === '异常处置更新');
+
+      const abnormal = ['待处置', '禁止使用', '已放行', '已降级使用', '已退场'].includes(b.status);
+      const canBind = (
+        samplings.length > 0 &&
+        samplings.every(s => s.sealing_photo && s.sealing_photo !== '' && s.is_sent === 1) &&
+        reports.length > 0 &&
+        (!abnormal || (disposals.length > 0 && disposals[0].final_result))
+      );
+      const missing: string[] = [];
+      if (samplings.length === 0) missing.push('无取样');
+      samplings.forEach((s, i) => {
+        if (!s.sealing_photo) missing.push(`取${i + 1}缺照片`);
+        if (!s.is_sent) missing.push(`取${i + 1}未送`);
+      });
+      if (reports.length === 0) missing.push('无报告');
+      if (abnormal) {
+        if (disposals.length === 0) missing.push('无处置');
+        if (!disposals[0]?.final_result) missing.push('未闭环');
+      }
+
+      const maxRows = Math.max(samplings.length, reports.length, disposals.length, 1);
+      for (let i = 0; i < maxRows; i++) {
+        const s = samplings[i] || {};
+        const r = reports[i] || {};
+        const d = disposals[i] || disposals[0] || {};
+        rows.push([
+          i === 0 ? b.material_type : '',
+          i === 0 ? b.batch_no : '',
+          i === 0 ? b.entry_date : '',
+          i === 0 ? b.quantity : '',
+          i === 0 ? (b.furnace_no || '') : '',
+          i === 0 ? b.sampling_location : '',
+          i === 0 ? b.status : '',
+          i === 0 ? (entryLog?.operator || '') : '',
+          i === 0 ? (entryLog?.created_at || b.entry_date) : '',
+          s.sample_no || '', s.sampling_date || '', samplingLogs[i]?.operator || '',
+          s.sealing_photo ? '有' : (s.sample_no ? '缺' : ''),
+          s.sent_date || '', sentLogs[i]?.operator || '', s.testing_agency || '',
+          r.report_no || '', r.conclusion || '', reportLogs[i]?.operator || '',
+          d.retest_sample_no || '', d.retest_testing_agency || '', d.retest_report_no || '',
+          d.retest_conclusion || '', d.retest_date || '',
+          i === 0 ? (d.disposal_opinion || '') : '',
+          dispLogs[0]?.operator || d.operator || '',
+          d.final_result || '',
+          (d.final_result && dispLogs[dispLogs.length - 1]?.operator) || '',
+          i === 0 ? (canBind ? '可装订' : '缺项') : '',
+          i === 0 ? missing.join('；') : '',
         ]);
       }
     }

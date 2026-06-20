@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
     getDetail: (id: number) => ipcRenderer.invoke('batch:getDetail', id),
     getMonthlySummary: (yearMonth?: string) => ipcRenderer.invoke('batch:getMonthlySummary', yearMonth),
     getTransferList: (yearMonth: string) => ipcRenderer.invoke('batch:getTransferList', yearMonth),
+    getArchivePackage: (yearMonth: string) => ipcRenderer.invoke('batch:getArchivePackage', yearMonth),
   },
   sampling: {
     getAll: (keyword?: string) => ipcRenderer.invoke('sampling:getAll', keyword),
@@ -39,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
     reportsCsv: (keyword?: string) => ipcRenderer.invoke('export:reportsCsv', keyword),
     saveCsv: (defaultName: string, content: string) => ipcRenderer.invoke('dialog:saveCsv', defaultName, content),
     transferCsv: (yearMonth: string) => ipcRenderer.invoke('export:transferCsv', yearMonth),
+    archiveCsv: (yearMonth: string) => ipcRenderer.invoke('export:archiveCsv', yearMonth),
   },
   photo: {
     save: (dataUrl: string, fileName: string) => ipcRenderer.invoke('photo:save', dataUrl, fileName),
@@ -51,24 +53,25 @@ export type ApiType = {
   batch: {
     getAll: () => Promise<any[]>;
     getByStatus: (status: string) => Promise<any[]>;
-    create: (data: any) => Promise<number>;
+    create: (data: any, operator?: string) => Promise<number>;
     delete: (id: number) => Promise<void>;
     getDetail: (id: number) => Promise<any>;
     getMonthlySummary: (yearMonth?: string) => Promise<any[]>;
     getTransferList: (yearMonth: string) => Promise<any[]>;
+    getArchivePackage: (yearMonth: string) => Promise<any[]>;
   };
   sampling: {
     getAll: (keyword?: string) => Promise<any[]>;
     getByBatchId: (batchId: number) => Promise<any[]>;
     getPendingSend: (keyword?: string) => Promise<any[]>;
     getOverdue: () => Promise<any[]>;
-    create: (data: any) => Promise<number>;
-    markAsSent: (id: number, sentDate: string) => Promise<void>;
+    create: (data: any, operator?: string) => Promise<number>;
+    markAsSent: (id: number, sentDate: string, operator?: string) => Promise<void>;
   };
   report: {
     getAll: (keyword?: string) => Promise<any[]>;
     getByBatchId: (batchId: number) => Promise<any[]>;
-    create: (data: any) => Promise<number>;
+    create: (data: any, operator?: string) => Promise<number>;
   };
   disposal: {
     getAll: () => Promise<any[]>;
@@ -85,6 +88,7 @@ export type ApiType = {
     reportsCsv: (keyword?: string) => Promise<string>;
     saveCsv: (defaultName: string, content: string) => Promise<string | null>;
     transferCsv: (yearMonth: string) => Promise<string>;
+    archiveCsv: (yearMonth: string) => Promise<string>;
   };
   photo: {
     save: (dataUrl: string, fileName: string) => Promise<string>;

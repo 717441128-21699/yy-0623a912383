@@ -14,6 +14,9 @@ const STATUS_CLASS: Record<BatchStatus, string> = {
   '可用': 'status-ok',
   '待处置': 'status-todo',
   '禁止使用': 'status-bad',
+  '已放行': 'status-ok',
+  '已降级使用': 'status-ok',
+  '已退场': 'status-ok',
 };
 
 export default function ReportPanel({ onDataChange }: Props) {

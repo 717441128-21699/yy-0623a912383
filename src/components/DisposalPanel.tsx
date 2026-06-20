@@ -25,6 +25,7 @@ export default function DisposalPanel({ onDataChange }: Props) {
     final_result: '',
     disposal_date: new Date().toISOString().slice(0, 10),
     final_date: '',
+    operator: '',
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
@@ -33,8 +34,13 @@ export default function DisposalPanel({ onDataChange }: Props) {
       window.api.batch.getAll(),
       window.api.disposal.getAll(),
     ]);
+    const closedStatuses = ['已放行', '已降级使用', '已退场'];
+    const finalResults = ['放行', '降级使用', '退场'];
     const allAbnormal = all.filter(b => b.status === '待处置' || b.status === '禁止使用');
-    const pendingAbnormal = allAbnormal.filter(b => !disp.some(d => d.batch_id === b.id && d.final_result));
+    const pendingAbnormal = allAbnormal.filter(b => {
+      if (closedStatuses.includes(b.status)) return false;
+      return !disp.some(d => d.batch_id === b.id && finalResults.includes(d.final_result || ''));
+    });
     setAbnormalBatches(pendingAbnormal);
     setDisposals(disp);
     onDataChange?.();
@@ -66,6 +72,7 @@ export default function DisposalPanel({ onDataChange }: Props) {
       final_result: '',
       disposal_date: new Date().toISOString().slice(0, 10),
       final_date: '',
+      operator: '',
     });
     setFormErrors({});
     setEditingId(null);
@@ -85,6 +92,7 @@ export default function DisposalPanel({ onDataChange }: Props) {
       final_result: disp.final_result || '',
       disposal_date: disp.disposal_date,
       final_date: disp.final_date || '',
+      operator: disp.operator || '',
     });
     setFormErrors({});
     setEditingId(disp.id);
@@ -135,7 +143,13 @@ export default function DisposalPanel({ onDataChange }: Props) {
                     <tbody>
                       {abnormalBatches.map(b => {
                         const hasDisp = disposals.some(d => d.batch_id === b.id);
-                        const hasFinalResult = disposals.some(d => d.batch_id === b.id && d.final_result);
+                        const finalResults = ['放行', '降级使用', '退场'];
+                        const closedStatuses = ['已放行', '已降级使用', '已退场'];
+                        const hasFinalResult = disposals.some(d => d.batch_id === b.id && finalResults.includes(d.final_result || ''));
+                        const isClosedStatus = closedStatuses.includes(b.status);
+                        let statusClass = 'status-todo';
+                        if (b.status === '禁止使用') statusClass = 'status-bad';
+                        else if (isClosedStatus) statusClass = 'status-ok';
                         return (
                           <tr key={b.id}>
                             <td>{b.material_type}</td>
@@ -143,12 +157,12 @@ export default function DisposalPanel({ onDataChange }: Props) {
                             <td>{b.entry_date}</td>
                             <td>{b.quantity}</td>
                             <td>
-                              <span className={`status-tag ${b.status === '禁止使用' ? 'status-bad' : 'status-todo'}`}>
+                              <span className={`status-tag ${statusClass}`}>
                                 {b.status}
                               </span>
-                              {hasFinalResult && <span className="sub-tag tag-ok">已闭环</span>}
-                              {!hasFinalResult && !hasDisp && <span className="sub-tag tag-miss">未处置</span>}
-                              {!hasFinalResult && hasDisp && <span className="sub-tag tag-warn">处置中</span>}
+                              {(hasFinalResult || isClosedStatus) && <span className="sub-tag tag-ok">已闭环</span>}
+                              {!hasFinalResult && !isClosedStatus && !hasDisp && <span className="sub-tag tag-miss">未处置</span>}
+                              {!hasFinalResult && !isClosedStatus && hasDisp && <span className="sub-tag tag-warn">处置中</span>}
                             </td>
                             <td>
                               <div className="action-cell">
@@ -172,6 +186,7 @@ export default function DisposalPanel({ onDataChange }: Props) {
                       <tr>
                         <th>材料类型</th>
                         <th>批次编号</th>
+                        <th>办理人</th>
                         <th>处置意见</th>
                         <th>复检安排</th>
                         <th>复检报告</th>
@@ -187,6 +202,7 @@ export default function DisposalPanel({ onDataChange }: Props) {
                         <tr key={d.id}>
                           <td>{d.material_type}</td>
                           <td>{d.batch_no}</td>
+                          <td>{d.operator || '-'}</td>
                           <td style={{ maxWidth: 200 }}>{d.disposal_opinion}</td>
                           <td style={{ maxWidth: 180 }}>{d.retest_plan || '-'}</td>
                           <td>{d.retest_report_no || '-'}</td>
@@ -196,8 +212,10 @@ export default function DisposalPanel({ onDataChange }: Props) {
                             ) : '-'}
                           </td>
                           <td>
-                            {d.final_result ? (
+                            {d.final_result && ['放行', '降级使用', '退场'].includes(d.final_result) ? (
                               <span className="status-tag status-ok">{d.final_result}</span>
+                            ) : d.final_result ? (
+                              <span className="status-tag status-todo">{d.final_result}</span>
                             ) : (
                               <span className="sub-tag tag-warn">待闭环</span>
                             )}
@@ -254,6 +272,17 @@ export default function DisposalPanel({ onDataChange }: Props) {
                     onChange={e => setForm({ ...form, disposal_date: e.target.value })}
                   />
                   <div className="form-error-text">{formErrors.disposal_date}</div>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-item">
+                  <label>办理人</label>
+                  <input
+                    type="text"
+                    placeholder="经办人姓名"
+                    value={form.operator}
+                    onChange={e => setForm({ ...form, operator: e.target.value })}
+                  />
                 </div>
               </div>
               <div className="form-row">
@@ -337,14 +366,17 @@ export default function DisposalPanel({ onDataChange }: Props) {
                 </div>
               </div>
               <div className="form-row">
-                <div className="form-item" style={{ minWidth: '100%' }}>
+                <div className="form-item">
                   <label>最终处理结果（闭环时填写）</label>
-                  <textarea
-                    rows={2}
-                    placeholder="例如：已完成退场 / 复检合格，允许使用 / 已降级用于非承重部位"
+                  <select
                     value={form.final_result}
                     onChange={e => setForm({ ...form, final_result: e.target.value })}
-                  />
+                  >
+                    <option value="">请选择最终结果</option>
+                    <option value="放行">放行</option>
+                    <option value="降级使用">降级使用</option>
+                    <option value="退场">退场</option>
+                  </select>
                 </div>
               </div>
               <div className="form-row">

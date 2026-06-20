@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { MonthlySummaryItem, MaterialType, TransferDocItem } from '../types';
+import type { MonthlySummaryItem, MaterialType, TransferDocItem, ArchivePackageItem, ArchiveNode } from '../types';
 
 interface Props {
   onBack: () => void;
@@ -8,12 +8,13 @@ interface Props {
 
 const MATERIAL_TYPES: MaterialType[] = ['钢筋原材', '混凝土试块', '防水材料'];
 
-type SubView = 'summary' | 'transfer';
+type SubView = 'summary' | 'transfer' | 'archive';
 
 export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props) {
   const [subView, setSubView] = useState<SubView>('summary');
   const [summary, setSummary] = useState<MonthlySummaryItem[]>([]);
   const [transferList, setTransferList] = useState<TransferDocItem[]>([]);
+  const [archiveList, setArchiveList] = useState<ArchivePackageItem[]>([]);
   const [expandedBatchId, setExpandedBatchId] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const now = new Date();
@@ -38,9 +39,19 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
     }
   };
 
+  const loadArchiveData = async () => {
+    try {
+      const data = await window.api.batch.getArchivePackage(selectedMonth);
+      setArchiveList(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     if (subView === 'summary') loadSummary();
-    else loadTransfer();
+    else if (subView === 'transfer') loadTransfer();
+    else if (subView === 'archive') loadArchiveData();
   }, [selectedMonth, subView]);
 
   const months: string[] = [];
@@ -101,10 +112,55 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
     if (saved) alert(`已导出到：${saved}`);
   };
 
+  const handleExportArchive = async () => {
+    const content = await window.api.export.archiveCsv(selectedMonth);
+    const defaultName = `闭环归档包_${selectedMonth}.csv`;
+    const saved = await window.api.export.saveCsv(defaultName, content);
+    if (saved) alert(`已导出到：${saved}`);
+  };
+
   const transferStats = {
     total: transferList.length,
     complete: transferList.filter(b => b.complete).length,
     incomplete: transferList.filter(b => !b.complete).length,
+  };
+
+  const archiveStats = {
+    total: archiveList.length,
+    bindable: archiveList.filter(x => x.can_bind).length,
+    missing: archiveList.filter(x => !x.can_bind).length,
+  };
+
+  const getStatusClass = (status: string) => {
+    return status === '可用' ? 'status-ok' :
+      status === '禁止使用' ? 'status-bad' :
+      status === '待处置' ? 'status-todo' :
+      status === '已送检待报告' ? 'status-sent' :
+      status === '已放行' || status === '已降级使用' || status === '已退场' ? 'status-bad' :
+      'status-sampled';
+  };
+
+  const renderArchiveNode = (node: ArchiveNode, label: string) => {
+    const statusClass = node.status === 'ok' ? 'done' : node.status === 'warn' ? 'warn' : 'bad';
+    return (
+      <div key={`${label}-${node.name}`} className={`timeline-item ${statusClass}`}>
+        <div className="timeline-action">
+          {label}
+          {node.status === 'ok' && <span className="sub-tag tag-ok">正常</span>}
+          {node.status === 'warn' && <span className="sub-tag tag-warn">注意</span>}
+          {node.status === 'miss' && <span className="sub-tag tag-miss">缺失</span>}
+        </div>
+        <div className="timeline-desc">{node.name}</div>
+        {node.detail && <div className="timeline-desc">{node.detail}</div>}
+        {(node.operator || node.time) && (
+          <div className="timeline-time">
+            {node.operator && `操作人：${node.operator}`}
+            {node.operator && node.time && ' · '}
+            {node.time && node.time}
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -126,6 +182,12 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
               >
                 资料移交清单
               </button>
+              <button
+                className={`btn ${subView === 'archive' ? 'btn-primary' : 'btn-default'} btn-sm`}
+                onClick={() => setSubView('archive')}
+              >
+                闭环归档包
+              </button>
             </div>
             <div className="filter-item" style={{ marginLeft: '16px' }}>
               <label style={{ color: '#606266' }}>月份：</label>
@@ -136,8 +198,8 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
               </select>
             </div>
           </div>
-          <button className="btn btn-default btn-sm" onClick={subView === 'summary' ? handleExportSummary : handleExportTransfer}>
-            {subView === 'summary' ? '导出汇总表' : '导出移交清单'}
+          <button className="btn btn-default btn-sm" onClick={subView === 'summary' ? handleExportSummary : subView === 'transfer' ? handleExportTransfer : handleExportArchive}>
+            {subView === 'summary' ? '导出汇总表' : subView === 'transfer' ? '导出移交清单' : '导出归档包CSV'}
           </button>
         </div>
         <div className="panel-body">
@@ -455,6 +517,126 @@ export default function MonthlyArchiveView({ onBack, onViewBatchDetail }: Props)
                     <div style={{ fontWeight: 600, marginBottom: '4px' }}>资料齐全判定规则：</div>
                     <div>· 正常批次：有进场记录 + 已取样 + 有封样照片 + 已送检 + 有检测报告</div>
                     <div>· 异常批次（待处置/禁止使用）：在上述基础上，还需有处置记录</div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {subView === 'archive' && (
+            <>
+              {archiveList.length === 0 ? (
+                <div className="empty-state">当前月份无数据</div>
+              ) : (
+                <>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '12px',
+                    marginBottom: '18px',
+                  }}>
+                    <div className="stat-card c3">
+                      <div className="stat-label">本月批次总数</div>
+                      <div className="stat-value">{archiveStats.total}</div>
+                    </div>
+                    <div className="stat-card c4">
+                      <div className="stat-label">可装订归档</div>
+                      <div className="stat-value">{archiveStats.bindable}</div>
+                    </div>
+                    <div className="stat-card c6">
+                      <div className="stat-label">资料缺项</div>
+                      <div className="stat-value">{archiveStats.missing}</div>
+                    </div>
+                  </div>
+
+                  {archiveList.map(item => {
+                    const isExpanded = expandedBatchId === item.batch_id;
+                    const showDisposal = item.status === '待处置' || item.status === '禁止使用' ||
+                      item.status === '已放行' || item.status === '已降级使用' || item.status === '已退场';
+                    return (
+                      <div key={item.batch_id} style={{ marginBottom: '8px', border: '1px solid #ebeef5', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '10px 14px',
+                            background: isExpanded ? '#f5f7fa' : '#fff',
+                            cursor: 'pointer',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                          }}
+                          onClick={() => setExpandedBatchId(isExpanded ? null : item.batch_id)}
+                        >
+                          <span style={{ fontSize: '12px', color: '#909399', width: '16px', textAlign: 'center' }}>
+                            {isExpanded ? '▼' : '▶'}
+                          </span>
+                          <span style={{ minWidth: '80px' }}>{item.material_type}</span>
+                          <span style={{ minWidth: '120px', fontWeight: 500 }}>{item.batch_no}</span>
+                          <span style={{ minWidth: '90px', color: '#909399', fontSize: '12px' }}>{item.entry_date}</span>
+                          <span className={`status-tag ${getStatusClass(item.status)}`}>
+                            {item.status}
+                          </span>
+                          {item.can_bind ? (
+                            <span className="sub-tag tag-ok">可装订</span>
+                          ) : (
+                            <span className="sub-tag tag-miss">缺项</span>
+                          )}
+                          {item.missing_reasons.length > 0 && (
+                            <span style={{ fontSize: '12px', color: '#f56c6c' }}>
+                              缺项：{item.missing_reasons.join('、')}
+                            </span>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div style={{ padding: '12px 14px', borderTop: '1px solid #ebeef5' }}>
+                            <div style={{ display: 'flex', gap: '24px', marginBottom: '12px', fontSize: '13px', color: '#606266', flexWrap: 'wrap' }}>
+                              <span>进场数量：<b>{item.quantity}</b></span>
+                              {item.furnace_no && <span>炉批号：<b>{item.furnace_no}</b></span>}
+                              <span>代表数量：<b>{item.represent_quantity}</b></span>
+                              <span>取样部位：<b>{item.sampling_location}</b></span>
+                            </div>
+                            <div className="timeline">
+                              {renderArchiveNode(item.chain.entry, '进场登记')}
+                              {item.chain.samplings.map((s, i) => renderArchiveNode(s, `取样记录${item.chain.samplings.length > 1 ? `(${i + 1})` : ''}`))}
+                              {item.chain.photos.map((p, i) => renderArchiveNode(p, `封样照片${item.chain.photos.length > 1 ? `(${i + 1})` : ''}`))}
+                              {item.chain.sendings.map((s, i) => renderArchiveNode(s, `送检记录${item.chain.sendings.length > 1 ? `(${i + 1})` : ''}`))}
+                              {item.chain.originalReports.map((r, i) => renderArchiveNode(r, `原检测报告${item.chain.originalReports.length > 1 ? `(${i + 1})` : ''}`))}
+                              {item.chain.retestReports.length === 0 ? (
+                                <div className="timeline-item done">
+                                  <div className="timeline-action">
+                                    复检资料
+                                    <span className="sub-tag tag-ok">无复检</span>
+                                  </div>
+                                  <div className="timeline-desc">无需复检</div>
+                                </div>
+                              ) : (
+                                item.chain.retestReports.map((r, i) => renderArchiveNode(r, `复检资料${item.chain.retestReports.length > 1 ? `(${i + 1})` : ''}`))
+                              )}
+                              {showDisposal && renderArchiveNode(item.chain.disposal, '异常处置')}
+                              {renderArchiveNode(item.chain.finalResult, '最终结果')}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <div style={{
+                    marginTop: '14px',
+                    padding: '12px',
+                    background: '#fafbfc',
+                    border: '1px dashed #dcdfe6',
+                    borderRadius: '3px',
+                    fontSize: '12px',
+                    color: '#606266',
+                  }}>
+                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>归档装订判定规则：</div>
+                    <div>· 有进场登记记录（包含材质证明文件）</div>
+                    <div>· 有取样记录（含见证信息）</div>
+                    <div>· 有封样照片</div>
+                    <div>· 有送检记录（含送检日期和检测机构）</div>
+                    <div>· 有原检测报告（含合格结论）</div>
+                    <div>· 异常批次（待处置/禁止使用/已放行/已降级/已退场）需额外包含：处置记录、复检资料（如有复检）、最终结果及闭环日期</div>
                   </div>
                 </>
               )}

@@ -9,6 +9,7 @@ declare global {
         getDetail: (id: number) => Promise<BatchDetail | null>;
         getMonthlySummary: (yearMonth?: string) => Promise<MonthlySummaryItem[]>;
         getTransferList: (yearMonth: string) => Promise<TransferDocItem[]>;
+        getArchivePackage: (yearMonth: string) => Promise<ArchivePackageItem[]>;
       };
       sampling: {
         getAll: (keyword?: string) => Promise<Sampling[]>;
@@ -38,6 +39,7 @@ declare global {
         reportsCsv: (keyword?: string) => Promise<string>;
         saveCsv: (defaultName: string, content: string) => Promise<string | null>;
         transferCsv: (yearMonth: string) => Promise<string>;
+        archiveCsv: (yearMonth: string) => Promise<string>;
       };
       photo: {
         save: (dataUrl: string, fileName: string) => Promise<string>;
@@ -50,7 +52,12 @@ declare global {
 
 export type MaterialType = '钢筋原材' | '混凝土试块' | '防水材料';
 
-export type BatchStatus = '待取样' | '已取样待送检' | '已送检待报告' | '可用' | '待处置' | '禁止使用';
+export type BatchStatus =
+  '待取样' | '已取样待送检' | '已送检待报告' | '可用' |
+  '待处置' | '禁止使用' |
+  '已放行' | '已降级使用' | '已退场';
+
+export type FinalDisposalResult = '放行' | '降级使用' | '退场' | string;
 
 export interface Batch {
   id: number;
@@ -193,6 +200,40 @@ export interface MonthlySummaryItem {
   sent_count: number;
   reported_count: number;
   abnormal_count: number;
+}
+
+export interface ArchiveNode {
+  name: string;
+  status: 'ok' | 'warn' | 'miss';
+  detail?: string;
+  operator?: string;
+  time?: string;
+}
+
+export interface ArchiveChain {
+  entry: ArchiveNode;
+  samplings: ArchiveNode[];
+  photos: ArchiveNode[];
+  sendings: ArchiveNode[];
+  originalReports: ArchiveNode[];
+  retestReports: ArchiveNode[];
+  disposal: ArchiveNode;
+  finalResult: ArchiveNode;
+}
+
+export interface ArchivePackageItem {
+  batch_id: number;
+  material_type: MaterialType;
+  batch_no: string;
+  quantity: number;
+  furnace_no?: string;
+  represent_quantity: number;
+  sampling_location: string;
+  entry_date: string;
+  status: BatchStatus;
+  can_bind: boolean;
+  missing_reasons: string[];
+  chain: ArchiveChain;
 }
 
 export {};

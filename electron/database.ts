@@ -3,6 +3,11 @@ import path from 'path';
 import { app } from 'electron';
 import fs from 'fs';
 
+export type BatchStatus =
+  '待取样' | '已取样待送检' | '已送检待报告' | '可用' |
+  '待处置' | '禁止使用' |
+  '已放行' | '已降级使用' | '已退场';
+
 export interface MaterialBatch {
   id?: number;
   material_type: '钢筋原材' | '混凝土试块' | '防水材料';
@@ -12,7 +17,7 @@ export interface MaterialBatch {
   represent_quantity: number;
   sampling_location: string;
   entry_date: string;
-  status: '待取样' | '已取样待送检' | '已送检待报告' | '可用' | '待处置' | '禁止使用';
+  status: BatchStatus;
   created_at?: string;
 }
 
@@ -108,7 +113,7 @@ export async function initDatabase() {
       represent_quantity REAL NOT NULL,
       sampling_location TEXT NOT NULL,
       entry_date TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT '待取样' CHECK(status IN ('待取样', '已取样待送检', '已送检待报告', '可用', '待处置', '禁止使用')),
+      status TEXT NOT NULL DEFAULT '待取样' CHECK(status IN ('待取样', '已取样待送检', '已送检待报告', '可用', '待处置', '禁止使用', '已放行', '已降级使用', '已退场')),
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -163,6 +168,57 @@ export async function initDatabase() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
   `);
+
+  // --- 数据库升级迁移（对已存在的老库补充字段） ---
+  function columnExists(tableName: string, colName: string): boolean {
+    try {
+      const rows = queryAll(`PRAGMA table_info(${tableName})`);
+      return rows.some(r => r.name === colName);
+    } catch {
+      return false;
+    }
+  }
+
+  const disposalCols = [
+    'retest_sample_no', 'retest_testing_agency', 'retest_report_no',
+    'retest_conclusion', 'retest_date', 'operator',
+  ];
+  for (const col of disposalCols) {
+    if (!columnExists('disposal_records', col)) {
+      try { db.run(`ALTER TABLE disposal_records ADD COLUMN ${col} TEXT`); }
+      catch (e) { console.warn(`ALTER TABLE disposal_records ADD ${col} failed:`, e); }
+    }
+  }
+
+  // 老库的 material_batches CHECK 限制了 status 取值范围，需要重建以支持新状态
+  try {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS material_batches_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        material_type TEXT NOT NULL CHECK(material_type IN ('钢筋原材', '混凝土试块', '防水材料')),
+        batch_no TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        furnace_no TEXT,
+        represent_quantity REAL NOT NULL,
+        sampling_location TEXT NOT NULL,
+        entry_date TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT '待取样' CHECK(status IN ('待取样', '已取样待送检', '已送检待报告', '可用', '待处置', '禁止使用', '已放行', '已降级使用', '已退场')),
+        created_at TEXT DEFAULT (datetime('now', 'localtime'))
+      )
+    `);
+    const existing = queryAll('SELECT COUNT(*) as c FROM material_batches');
+    if (existing.length > 0 && existing[0].c > 0) {
+      const newCount = queryAll('SELECT COUNT(*) as c FROM material_batches_new');
+      if (newCount.length === 0 || newCount[0].c === 0) {
+        db.run(`INSERT INTO material_batches_new (id, material_type, batch_no, quantity, furnace_no, represent_quantity, sampling_location, entry_date, status, created_at)
+          SELECT id, material_type, batch_no, quantity, furnace_no, represent_quantity, sampling_location, entry_date, status, created_at FROM material_batches`);
+      }
+    }
+    db.run('DROP TABLE IF EXISTS material_batches');
+    db.run('ALTER TABLE material_batches_new RENAME TO material_batches');
+  } catch (e) {
+    console.warn('material_batches 重建失败（忽略）:', e);
+  }
 
   saveDb();
   return db;
