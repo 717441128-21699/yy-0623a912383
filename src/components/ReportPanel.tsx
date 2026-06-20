@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Report, Sampling, ReportConclusion, BatchStatus } from '../types';
+import { validateReportForm } from '../utils/validators';
+import BatchDetailModal from './BatchDetailModal';
 
 interface Props {
   onDataChange: () => void;
@@ -19,6 +21,10 @@ export default function ReportPanel({ onDataChange }: Props) {
   const [sentSamplings, setSentSamplings] = useState<Sampling[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [filterConclusion, setFilterConclusion] = useState<string>('全部');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [detailBatchId, setDetailBatchId] = useState<number | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [form, setForm] = useState({
     sampling_id: '',
     report_no: '',
@@ -27,9 +33,9 @@ export default function ReportPanel({ onDataChange }: Props) {
     report_date: new Date().toISOString().slice(0, 10),
   });
 
-  const loadData = async () => {
+  const loadData = async (keyword?: string) => {
     const [r, allS] = await Promise.all([
-      window.api.report.getAll(),
+      window.api.report.getAll(keyword),
       window.api.sampling.getAll(),
     ]);
     setReports(r);
@@ -40,37 +46,69 @@ export default function ReportPanel({ onDataChange }: Props) {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      loadData(searchKeyword);
+    }, 300);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchKeyword]);
+
   const handleSubmit = async () => {
-    if (!form.sampling_id || !form.report_no || !form.report_date) {
-      alert('请填写必填项');
+    const validation = validateReportForm(form);
+    if (!validation.valid) {
+      setFormErrors(validation.errors);
       return;
     }
+    setFormErrors([]);
+
     if (form.conclusion === '不合格' && !form.unqualified_items.trim()) {
       if (!confirm('未填写不合格项，系统将标记为"待处置"。确定继续吗？')) return;
     }
 
     const sampling = sentSamplings.find(s => s.id === Number(form.sampling_id));
-    if (!sampling) return;
+    if (!sampling) {
+      setFormErrors(['未找到该送检记录']);
+      return;
+    }
 
-    await window.api.report.create({
-      batch_id: sampling.batch_id,
-      sampling_id: Number(form.sampling_id),
-      report_no: form.report_no,
-      conclusion: form.conclusion,
-      unqualified_items: form.unqualified_items.trim() || undefined,
-      report_date: form.report_date,
-    });
+    try {
+      await window.api.report.create({
+        batch_id: sampling.batch_id,
+        sampling_id: Number(form.sampling_id),
+        report_no: form.report_no,
+        conclusion: form.conclusion,
+        unqualified_items: form.unqualified_items.trim() || undefined,
+        report_date: form.report_date,
+      });
 
-    setShowAdd(false);
-    setForm({
-      sampling_id: '',
-      report_no: '',
-      conclusion: '合格',
-      unqualified_items: '',
-      report_date: new Date().toISOString().slice(0, 10),
-    });
-    loadData();
-    onDataChange();
+      setShowAdd(false);
+      setFormErrors([]);
+      setForm({
+        sampling_id: '',
+        report_no: '',
+        conclusion: '合格',
+        unqualified_items: '',
+        report_date: new Date().toISOString().slice(0, 10),
+      });
+      loadData();
+      onDataChange();
+    } catch (e: any) {
+      setFormErrors([e.message || '保存失败']);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const content = await window.api.export.reportsCsv(searchKeyword);
+      const defaultName = `检测报告_${new Date().toISOString().slice(0, 10)}.csv`;
+      const saved = await window.api.export.saveCsv(defaultName, content);
+      if (saved) alert(`已导出到：${saved}`);
+    } catch (e: any) {
+      alert('导出失败：' + e.message);
+    }
   };
 
   const usedSamplingIds = new Set(reports.map(r => r.sampling_id));
@@ -92,18 +130,29 @@ export default function ReportPanel({ onDataChange }: Props) {
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title">检测报告回填</div>
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              if (availableSamplings.length === 0) {
-                alert('没有可回填报告的送检记录。请先在"送检登记"中标记样品为已送检。');
-                return;
-              }
-              setShowAdd(true);
-            }}
-          >
-            + 录入报告
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <input
+              type="text"
+              placeholder="搜索报告/批次/样品号..."
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '240px' }}
+            />
+            <button className="btn btn-default btn-sm" onClick={handleExport}>导出表格</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (availableSamplings.length === 0) {
+                  alert('没有可回填报告的送检记录。请先在"送检登记"中标记样品为已送检。');
+                  return;
+                }
+                setFormErrors([]);
+                setShowAdd(true);
+              }}
+            >
+              + 录入报告
+            </button>
+          </div>
         </div>
         <div className="panel-body">
           <div className="filter-bar">
@@ -140,6 +189,7 @@ export default function ReportPanel({ onDataChange }: Props) {
                   <th>检测结论</th>
                   <th>不合格项</th>
                   <th>批次状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -167,6 +217,11 @@ export default function ReportPanel({ onDataChange }: Props) {
                           {batchStatus}
                         </span>
                       </td>
+                      <td>
+                        <button className="btn btn-default btn-sm" onClick={() => setDetailBatchId(r.batch_id)}>
+                          批次详情
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -181,9 +236,14 @@ export default function ReportPanel({ onDataChange }: Props) {
           <div className="modal-box">
             <div className="modal-header">
               <div className="modal-title">录入检测报告</div>
-              <span className="modal-close" onClick={() => setShowAdd(false)}>×</span>
+              <span className="modal-close" onClick={() => { setShowAdd(false); setFormErrors([]); }}>×</span>
             </div>
             <div className="modal-body">
+              {formErrors.length > 0 && (
+                <div className="alert-box alert-danger" style={{ marginBottom: '14px' }}>
+                  {formErrors.map((err, i) => <div key={i}>⚠ {err}</div>)}
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-item" style={{ flex: 2 }}>
                   <label><span className="required">*</span>选择送检记录</label>
@@ -248,11 +308,15 @@ export default function ReportPanel({ onDataChange }: Props) {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-default" onClick={() => setShowAdd(false)}>取消</button>
+              <button className="btn btn-default" onClick={() => { setShowAdd(false); setFormErrors([]); }}>取消</button>
               <button className="btn btn-primary" onClick={handleSubmit}>确认回填</button>
             </div>
           </div>
         </div>
+      )}
+
+      {detailBatchId !== null && (
+        <BatchDetailModal batchId={detailBatchId} onClose={() => setDetailBatchId(null)} />
       )}
     </div>
   );

@@ -6,9 +6,11 @@ declare global {
         getByStatus: (status: string) => Promise<Batch[]>;
         create: (data: Omit<Batch, 'id' | 'created_at' | 'status'>) => Promise<number>;
         delete: (id: number) => Promise<void>;
+        getDetail: (id: number) => Promise<BatchDetail | null>;
+        getMonthlySummary: (yearMonth?: string) => Promise<MonthlySummaryItem[]>;
       };
       sampling: {
-        getAll: () => Promise<Sampling[]>;
+        getAll: (keyword?: string) => Promise<Sampling[]>;
         getByBatchId: (batchId: number) => Promise<Sampling[]>;
         getPendingSend: () => Promise<Sampling[]>;
         getOverdue: () => Promise<Sampling[]>;
@@ -16,9 +18,14 @@ declare global {
         markAsSent: (id: number, sentDate: string) => Promise<void>;
       };
       report: {
-        getAll: () => Promise<Report[]>;
+        getAll: (keyword?: string) => Promise<Report[]>;
         getByBatchId: (batchId: number) => Promise<Report[]>;
         create: (data: Omit<Report, 'id' | 'created_at'>) => Promise<number>;
+      };
+      export: {
+        samplingsCsv: (keyword?: string) => Promise<string>;
+        reportsCsv: (keyword?: string) => Promise<string>;
+        saveCsv: (defaultName: string, content: string) => Promise<string | null>;
       };
       photo: {
         save: (dataUrl: string, fileName: string) => Promise<string>;
@@ -52,6 +59,7 @@ export interface Sampling {
   sample_no: string;
   witness_supervisor: string;
   sealing_photo?: string;
+  sealing_photo_data?: string;
   testing_agency: string;
   sampling_date: string;
   is_sent: number;
@@ -77,6 +85,22 @@ export interface Report {
   material_type?: MaterialType;
   batch_no?: string;
   sample_no?: string;
+}
+
+export interface BatchDetail {
+  batch: Batch;
+  samplings: Sampling[];
+  reports: Report[];
+}
+
+export interface MonthlySummaryItem {
+  month: string;
+  material_type: MaterialType;
+  total_count: number;
+  sampled_count: number;
+  sent_count: number;
+  reported_count: number;
+  abnormal_count: number;
 }
 
 export {};

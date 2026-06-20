@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Batch, Sampling } from '../types';
+import { validateSamplingForm } from '../utils/validators';
+import BatchDetailModal from './BatchDetailModal';
 
 interface Props {
   onDataChange: () => void;
@@ -19,6 +21,10 @@ export default function InspectionPanel({ onDataChange }: Props) {
   const [showAdd, setShowAdd] = useState(false);
   const [photoData, setPhotoData] = useState<string>('');
   const [filterTab, setFilterTab] = useState<'pending' | 'all'>('pending');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [formErrors, setFormErrors] = useState<string[]>([]);
+  const [detailBatchId, setDetailBatchId] = useState<number | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [form, setForm] = useState({
     batch_id: '',
     sample_no: '',
@@ -27,10 +33,10 @@ export default function InspectionPanel({ onDataChange }: Props) {
     sampling_date: new Date().toISOString().slice(0, 10),
   });
 
-  const loadData = async () => {
+  const loadData = async (keyword?: string) => {
     const [batches, allS, overdueS, pendingS] = await Promise.all([
       window.api.batch.getByStatus('待取样'),
-      window.api.sampling.getAll(),
+      window.api.sampling.getAll(keyword),
       window.api.sampling.getOverdue(),
       window.api.sampling.getPendingSend(),
     ]);
@@ -44,6 +50,18 @@ export default function InspectionPanel({ onDataChange }: Props) {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (filterTab === 'all') {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+      searchTimer.current = setTimeout(() => {
+        loadData(searchKeyword);
+      }, 300);
+    }
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchKeyword, filterTab]);
+
   const handlePhotoSelect = async () => {
     const data = await window.api.photo.openDialog();
     if (data) setPhotoData(data);
@@ -56,50 +74,75 @@ export default function InspectionPanel({ onDataChange }: Props) {
   };
 
   const handleSubmit = async () => {
-    if (!form.batch_id || !form.sample_no || !form.witness_supervisor || !form.testing_agency) {
-      alert('请填写必填项');
+    const validation = validateSamplingForm(form);
+    if (!validation.valid) {
+      setFormErrors(validation.errors);
       return;
     }
+    setFormErrors([]);
     const batch = pendingBatches.find(b => b.id === Number(form.batch_id));
-    if (!batch) return;
-
-    let photoPath = '';
-    if (photoData) {
-      const fileName = `seal_${form.sample_no}_${Date.now()}.jpg`;
-      photoPath = await window.api.photo.save(photoData, fileName);
+    if (!batch) {
+      setFormErrors(['未找到该批次信息']);
+      return;
     }
 
-    const deadline = calcDeadline(form.sampling_date, batch.material_type);
+    try {
+      let photoPath = '';
+      if (photoData) {
+        const fileName = `seal_${form.sample_no}_${Date.now()}.jpg`;
+        photoPath = await window.api.photo.save(photoData, fileName);
+      }
 
-    await window.api.sampling.create({
-      batch_id: Number(form.batch_id),
-      sample_no: form.sample_no,
-      witness_supervisor: form.witness_supervisor,
-      sealing_photo: photoPath || undefined,
-      testing_agency: form.testing_agency,
-      sampling_date: form.sampling_date,
-      is_sent: 0,
-      deadline_date: deadline,
-    });
+      const deadline = calcDeadline(form.sampling_date, batch.material_type);
 
-    setShowAdd(false);
-    setPhotoData('');
-    setForm({
-      batch_id: '',
-      sample_no: '',
-      witness_supervisor: '',
-      testing_agency: '',
-      sampling_date: new Date().toISOString().slice(0, 10),
-    });
-    loadData();
-    onDataChange();
+      await window.api.sampling.create({
+        batch_id: Number(form.batch_id),
+        sample_no: form.sample_no,
+        witness_supervisor: form.witness_supervisor,
+        sealing_photo: photoPath || undefined,
+        testing_agency: form.testing_agency,
+        sampling_date: form.sampling_date,
+        is_sent: 0,
+        deadline_date: deadline,
+      });
+
+      setShowAdd(false);
+      setPhotoData('');
+      setFormErrors([]);
+      setForm({
+        batch_id: '',
+        sample_no: '',
+        witness_supervisor: '',
+        testing_agency: '',
+        sampling_date: new Date().toISOString().slice(0, 10),
+      });
+      loadData();
+      onDataChange();
+    } catch (e: any) {
+      setFormErrors([e.message || '保存失败']);
+    }
   };
 
   const handleMarkSent = async (id: number) => {
     if (!confirm('确认标记为已送检？')) return;
-    await window.api.sampling.markAsSent(id, new Date().toISOString().slice(0, 10));
-    loadData();
-    onDataChange();
+    try {
+      await window.api.sampling.markAsSent(id, new Date().toISOString().slice(0, 10));
+      loadData();
+      onDataChange();
+    } catch (e: any) {
+      alert(e.message || '操作失败');
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const content = await window.api.export.samplingsCsv(searchKeyword);
+      const defaultName = `送检记录_${new Date().toISOString().slice(0, 10)}.csv`;
+      const saved = await window.api.export.saveCsv(defaultName, content);
+      if (saved) alert(`已导出到：${saved}`);
+    } catch (e: any) {
+      alert('导出失败：' + e.message);
+    }
   };
 
   const displayList = filterTab === 'pending' ? pendingSend : samplings;
@@ -141,18 +184,31 @@ export default function InspectionPanel({ onDataChange }: Props) {
               </button>
             </div>
           </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => {
-              if (pendingBatches.length === 0) {
-                alert('当前没有待取样的批次，请先在"取样任务"中新增进场批次');
-                return;
-              }
-              setShowAdd(true);
-            }}
-          >
-            + 取样登记
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {filterTab === 'all' && (
+              <input
+                type="text"
+                placeholder="搜索批次/样品/检测机构/见证..."
+                value={searchKeyword}
+                onChange={e => setSearchKeyword(e.target.value)}
+                style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '240px' }}
+              />
+            )}
+            <button className="btn btn-default btn-sm" onClick={handleExport}>导出表格</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (pendingBatches.length === 0) {
+                  alert('当前没有待取样的批次，请先在"取样任务"中新增进场批次');
+                  return;
+                }
+                setFormErrors([]);
+                setShowAdd(true);
+              }}
+            >
+              + 取样登记
+            </button>
+          </div>
         </div>
         <div className="panel-body">
           {displayList.length === 0 ? (
@@ -203,25 +259,30 @@ export default function InspectionPanel({ onDataChange }: Props) {
                         )}
                       </td>
                       <td>
-                        {s.is_sent === 0 && (
-                          <button className="btn btn-success btn-sm" onClick={() => handleMarkSent(s.id)}>
-                            标记已送检
+                        <div className="action-cell">
+                          <button className="btn btn-default btn-sm" onClick={() => setDetailBatchId(s.batch_id)}>
+                            批次详情
                           </button>
-                        )}
-                        {s.sealing_photo && (
-                          <button
-                            className="btn btn-default btn-sm"
-                            onClick={async () => {
-                              const data = await window.api.photo.read(s.sealing_photo!);
-                              if (data) {
-                                const w = window.open('', '_blank');
-                                if (w) w.document.write(`<img src="${data}" style="max-width:100%" />`);
-                              }
-                            }}
-                          >
-                            查看照片
-                          </button>
-                        )}
+                          {s.is_sent === 0 && (
+                            <button className="btn btn-success btn-sm" onClick={() => handleMarkSent(s.id)}>
+                              标记已送检
+                            </button>
+                          )}
+                          {s.sealing_photo && (
+                            <button
+                              className="btn btn-default btn-sm"
+                              onClick={async () => {
+                                const data = await window.api.photo.read(s.sealing_photo!);
+                                if (data) {
+                                  const w = window.open('', '_blank');
+                                  if (w) w.document.write(`<img src="${data}" style="max-width:100%" />`);
+                                }
+                              }}
+                            >
+                              查看照片
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -237,9 +298,14 @@ export default function InspectionPanel({ onDataChange }: Props) {
           <div className="modal-box">
             <div className="modal-header">
               <div className="modal-title">取样登记（已现场完成取样）</div>
-              <span className="modal-close" onClick={() => setShowAdd(false)}>×</span>
+              <span className="modal-close" onClick={() => { setShowAdd(false); setFormErrors([]); }}>×</span>
             </div>
             <div className="modal-body">
+              {formErrors.length > 0 && (
+                <div className="alert-box alert-danger" style={{ marginBottom: '14px' }}>
+                  {formErrors.map((err, i) => <div key={i}>⚠ {err}</div>)}
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-item" style={{ flex: 2 }}>
                   <label><span className="required">*</span>选择进场批次（待取样）</label>
@@ -296,11 +362,15 @@ export default function InspectionPanel({ onDataChange }: Props) {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-default" onClick={() => setShowAdd(false)}>取消</button>
+              <button className="btn btn-default" onClick={() => { setShowAdd(false); setFormErrors([]); }}>取消</button>
               <button className="btn btn-primary" onClick={handleSubmit}>登记完成</button>
             </div>
           </div>
         </div>
+      )}
+
+      {detailBatchId !== null && (
+        <BatchDetailModal batchId={detailBatchId} onClose={() => setDetailBatchId(null)} />
       )}
     </div>
   );
