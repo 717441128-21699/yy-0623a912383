@@ -22,6 +22,7 @@ export interface SamplingRecord {
   sample_no: string;
   witness_supervisor: string;
   sealing_photo?: string;
+  sealing_photo_data?: string | null;
   testing_agency: string;
   sampling_date: string;
   is_sent: number;
@@ -38,6 +39,27 @@ export interface TestReport {
   conclusion: '合格' | '不合格';
   unqualified_items?: string;
   report_date: string;
+  created_at?: string;
+}
+
+export interface OperationLog {
+  id?: number;
+  batch_id: number;
+  action: string;
+  description?: string;
+  operator?: string;
+  created_at?: string;
+}
+
+export interface DisposalRecord {
+  id?: number;
+  batch_id: number;
+  disposal_opinion: string;
+  retest_plan?: string;
+  final_result: string;
+  disposal_date: string;
+  final_date?: string;
+  operator?: string;
   created_at?: string;
 }
 
@@ -107,6 +129,27 @@ export async function initDatabase() {
       conclusion TEXT NOT NULL CHECK(conclusion IN ('合格', '不合格')),
       unqualified_items TEXT,
       report_date TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS operation_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      description TEXT,
+      operator TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS disposal_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      disposal_opinion TEXT NOT NULL,
+      retest_plan TEXT,
+      final_result TEXT,
+      disposal_date TEXT NOT NULL,
+      final_date TEXT,
+      operator TEXT,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
   `);
@@ -226,9 +269,73 @@ export const samplingQueries = {
   },
 };
 
+export const logQueries = {
+  getByBatchId: (batchId: number): OperationLog[] =>
+    queryAll('SELECT * FROM operation_logs WHERE batch_id = ? ORDER BY created_at ASC', [batchId]) as OperationLog[],
+  create: (data: Omit<OperationLog, 'id' | 'created_at'>): number => {
+    const stmt = db.prepare(`INSERT INTO operation_logs
+      (batch_id, action, description, operator)
+      VALUES (?, ?, ?, ?)`);
+    stmt.run([
+      data.batch_id, data.action, data.description || null, data.operator || null,
+    ]);
+    stmt.free();
+    saveDb();
+    const result = queryOne('SELECT last_insert_rowid() as id') as any;
+    return result.id;
+  },
+};
+
+export const disposalQueries = {
+  getAll: (): any[] => queryAll(`
+    SELECT d.*, m.material_type, m.batch_no, m.quantity, m.entry_date, m.status
+    FROM disposal_records d
+    LEFT JOIN material_batches m ON d.batch_id = m.id
+    ORDER BY d.created_at DESC
+  `),
+  getByBatchId: (batchId: number): DisposalRecord[] =>
+    queryAll('SELECT * FROM disposal_records WHERE batch_id = ? ORDER BY created_at DESC', [batchId]) as DisposalRecord[],
+  getById: (id: number): DisposalRecord | null =>
+    queryOne('SELECT * FROM disposal_records WHERE id = ?', [id]) as DisposalRecord | null,
+  create: (data: Omit<DisposalRecord, 'id' | 'created_at'>): number => {
+    const stmt = db.prepare(`INSERT INTO disposal_records
+      (batch_id, disposal_opinion, retest_plan, final_result, disposal_date, final_date, operator)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    stmt.run([
+      data.batch_id, data.disposal_opinion, data.retest_plan || null,
+      data.final_result || null, data.disposal_date, data.final_date || null,
+      data.operator || null,
+    ]);
+    stmt.free();
+    saveDb();
+    const result = queryOne('SELECT last_insert_rowid() as id') as any;
+    return result.id;
+  },
+  update: (id: number, data: Partial<DisposalRecord>) => {
+    const fields: string[] = [];
+    const params: any[] = [];
+    const map: Record<string, any> = {
+      disposal_opinion: data.disposal_opinion,
+      retest_plan: data.retest_plan,
+      final_result: data.final_result,
+      disposal_date: data.disposal_date,
+      final_date: data.final_date,
+      operator: data.operator,
+    };
+    for (const key in map) {
+      if (map[key] !== undefined) {
+        fields.push(`${key} = ?`);
+        params.push(map[key]);
+      }
+    }
+    params.push(id);
+    runSql(`UPDATE disposal_records SET ${fields.join(', ')} WHERE id = ?`, params);
+  },
+};
+
 export const reportQueries = {
   getAll: (): any[] => queryAll(`
-    SELECT r.*, m.material_type, m.batch_no, s.sample_no
+    SELECT r.*, m.material_type, m.batch_no, s.sample_no, s.testing_agency
     FROM test_reports r
     LEFT JOIN material_batches m ON r.batch_id = m.id
     LEFT JOIN sampling_records s ON r.sampling_id = s.id

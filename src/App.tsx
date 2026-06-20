@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import SamplingTaskPanel from './components/SamplingTaskPanel';
 import InspectionPanel from './components/InspectionPanel';
 import ReportPanel from './components/ReportPanel';
+import DisposalPanel from './components/DisposalPanel';
 import type { Batch, Sampling, Report } from './types';
 
-type TabKey = 'task' | 'inspection' | 'report';
+type TabKey = 'task' | 'inspection' | 'report' | 'disposal';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('task');
@@ -82,6 +83,15 @@ export default function App() {
         >
           报告回填
         </div>
+        <div
+          className={`tab-item ${activeTab === 'disposal' ? 'active' : ''}`}
+          onClick={() => setActiveTab('disposal')}
+        >
+          异常处置
+          {(batches.filter(b => b.status === '待处置' || b.status === '禁止使用').length > 0) && (
+            <span className="badge">{batches.filter(b => b.status === '待处置' || b.status === '禁止使用').length}</span>
+          )}
+        </div>
       </nav>
 
       <div className="tab-content">
@@ -97,6 +107,7 @@ export default function App() {
         {activeTab === 'task' && <SamplingTaskPanel onDataChange={refreshData} />}
         {activeTab === 'inspection' && <InspectionPanel onDataChange={refreshData} />}
         {activeTab === 'report' && <ReportPanel onDataChange={refreshData} />}
+        {activeTab === 'disposal' && <DisposalPanel onDataChange={refreshData} />}
       </div>
     </div>
   );

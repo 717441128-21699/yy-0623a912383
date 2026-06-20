@@ -94,9 +94,9 @@ export default function SamplingTaskPanel({ onDataChange }: Props) {
     return true;
   });
 
-  const currentView = viewMode;
+  const vm = viewMode as string;
 
-  if (currentView === 'archive') {
+  if (vm === 'archive') {
     return (
       <MonthlyArchiveView
         onBack={() => setViewMode('list')}
@@ -112,13 +112,13 @@ export default function SamplingTaskPanel({ onDataChange }: Props) {
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '2px' }}>
               <button
-                className={`btn ${currentView === 'list' ? 'btn-primary' : 'btn-default'} btn-sm`}
+                className={`btn ${vm === 'list' ? 'btn-primary' : 'btn-default'} btn-sm`}
                 onClick={() => setViewMode('list')}
               >
                 批次列表
               </button>
               <button
-                className={`btn ${currentView === 'archive' ? 'btn-primary' : 'btn-default'} btn-sm`}
+                className={`btn ${vm === 'archive' ? 'btn-primary' : 'btn-default'} btn-sm`}
                 onClick={() => setViewMode('archive')}
               >
                 月度归档视图

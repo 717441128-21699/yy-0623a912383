@@ -8,11 +8,12 @@ declare global {
         delete: (id: number) => Promise<void>;
         getDetail: (id: number) => Promise<BatchDetail | null>;
         getMonthlySummary: (yearMonth?: string) => Promise<MonthlySummaryItem[]>;
+        getTransferList: (yearMonth: string) => Promise<TransferDocItem[]>;
       };
       sampling: {
         getAll: (keyword?: string) => Promise<Sampling[]>;
         getByBatchId: (batchId: number) => Promise<Sampling[]>;
-        getPendingSend: () => Promise<Sampling[]>;
+        getPendingSend: (keyword?: string) => Promise<Sampling[]>;
         getOverdue: () => Promise<Sampling[]>;
         create: (data: Omit<Sampling, 'id' | 'created_at'>) => Promise<number>;
         markAsSent: (id: number, sentDate: string) => Promise<void>;
@@ -22,10 +23,21 @@ declare global {
         getByBatchId: (batchId: number) => Promise<Report[]>;
         create: (data: Omit<Report, 'id' | 'created_at'>) => Promise<number>;
       };
+      disposal: {
+        getAll: () => Promise<DisposalItem[]>;
+        getByBatchId: (batchId: number) => Promise<DisposalItem[]>;
+        create: (data: Omit<DisposalItem, 'id' | 'created_at'>) => Promise<number>;
+        update: (id: number, data: Partial<DisposalItem>) => Promise<void>;
+      };
+      log: {
+        getByBatchId: (batchId: number) => Promise<OperationLogItem[]>;
+        create: (batchId: number, action: string, description?: string, operator?: string) => Promise<number>;
+      };
       export: {
         samplingsCsv: (keyword?: string) => Promise<string>;
         reportsCsv: (keyword?: string) => Promise<string>;
         saveCsv: (defaultName: string, content: string) => Promise<string | null>;
+        transferCsv: (yearMonth: string) => Promise<string>;
       };
       photo: {
         save: (dataUrl: string, fileName: string) => Promise<string>;
@@ -85,12 +97,57 @@ export interface Report {
   material_type?: MaterialType;
   batch_no?: string;
   sample_no?: string;
+  testing_agency?: string;
+}
+
+export interface OperationLogItem {
+  id: number;
+  batch_id: number;
+  action: string;
+  description?: string;
+  operator?: string;
+  created_at: string;
+}
+
+export interface DisposalItem {
+  id: number;
+  batch_id: number;
+  disposal_opinion: string;
+  retest_plan?: string;
+  final_result?: string;
+  disposal_date: string;
+  final_date?: string;
+  operator?: string;
+  created_at: string;
+  material_type?: MaterialType;
+  batch_no?: string;
+  quantity?: number;
+  entry_date?: string;
+  status?: BatchStatus;
+}
+
+export interface TransferDocItem {
+  batch_id: number;
+  material_type: MaterialType;
+  batch_no: string;
+  entry_date: string;
+  has_entry: boolean;
+  sampling_count: number;
+  has_sealing_photo: boolean;
+  sent_count: number;
+  report_count: number;
+  report_nos: string[];
+  has_disposal: boolean;
+  status: BatchStatus;
+  complete: boolean;
 }
 
 export interface BatchDetail {
   batch: Batch;
   samplings: Sampling[];
   reports: Report[];
+  logs: OperationLogItem[];
+  disposals: DisposalItem[];
 }
 
 export interface MonthlySummaryItem {

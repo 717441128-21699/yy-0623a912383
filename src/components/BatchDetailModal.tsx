@@ -67,7 +67,7 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
     );
   }
 
-  const { batch, samplings, reports } = detail;
+  const { batch, samplings, reports, logs, disposals } = detail;
 
   const getStepStatus = (key: string) => {
     if (key === 'entry') return 'done';
@@ -77,9 +77,11 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
     return 'pending';
   };
 
+  const abnormal = batch.status === '待处置' || batch.status === '禁止使用';
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-box" style={{ width: '880px', maxWidth: '95vw' }}>
+      <div className="modal-box" style={{ width: '920px', maxWidth: '95vw' }}>
         <div className="modal-header">
           <div className="modal-title">
             批次详情 — {batch.batch_no}
@@ -89,7 +91,8 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
           </div>
           <span className="modal-close" onClick={onClose}>×</span>
         </div>
-        <div className="modal-body" style={{ maxHeight: '70vh' }}>
+        <div className="modal-body" style={{ maxHeight: '75vh' }}>
+
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -128,165 +131,159 @@ export default function BatchDetailModal({ batchId, onClose }: Props) {
             })}
           </div>
 
-          <div className="panel" style={{ marginBottom: '16px' }}>
-            <div className="panel-header" style={{ padding: '10px 16px', background: '#f5f7fa' }}>
-              <div className="panel-title" style={{ fontSize: '14px' }}>① 进场信息</div>
-            </div>
-            <div className="panel-body" style={{ padding: '14px 16px' }}>
-              <div className="form-row" style={{ marginBottom: 0 }}>
-                <div className="form-item" style={{ minWidth: '140px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>材料类型</label>
-                  <div style={{ fontWeight: 600 }}>{batch.material_type}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '140px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>批次编号</label>
-                  <div style={{ fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{batch.batch_no}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '100px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>进场数量</label>
-                  <div>{batch.quantity}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '140px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>炉批号</label>
-                  <div style={{ fontFamily: 'Consolas, monospace' }}>{batch.furnace_no || '-'}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '100px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>代表数量</label>
-                  <div>{batch.represent_quantity}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '120px' }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>进场日期</label>
-                  <div>{batch.entry_date}</div>
-                </div>
-                <div className="form-item" style={{ minWidth: '200px', flex: 2 }}>
-                  <label style={{ color: '#909399', fontSize: '12px' }}>取样部位</label>
-                  <div>{batch.sampling_location}</div>
-                </div>
+          <div className="detail-section">
+            <div className="detail-section-title">① 进场信息</div>
+            <div className="info-grid">
+              <div><span className="label">材料类型：</span><span className="value">{batch.material_type}</span></div>
+              <div><span className="label">批次编号：</span><span className="value">{batch.batch_no}</span></div>
+              <div><span className="label">进场数量：</span><span className="value">{batch.quantity}</span></div>
+              <div><span className="label">炉批号：</span><span className="value">{batch.furnace_no || '-'}</span></div>
+              <div><span className="label">代表数量：</span><span className="value">{batch.represent_quantity}</span></div>
+              <div><span className="label">进场日期：</span><span className="value">{batch.entry_date}</span></div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span className="label">取样部位：</span><span className="value">{batch.sampling_location}</span>
               </div>
             </div>
           </div>
 
-          <div className="panel" style={{ marginBottom: '16px' }}>
-            <div className="panel-header" style={{ padding: '10px 16px', background: '#f5f7fa' }}>
-              <div className="panel-title" style={{ fontSize: '14px' }}>
-                ② 取样记录 <span style={{ fontSize: '12px', fontWeight: 400, color: '#909399' }}>（共 {samplings.length} 次）</span>
-              </div>
+          <div className="detail-section">
+            <div className="detail-section-title">
+              ② 取样记录 <span style={{ fontSize: '12px', fontWeight: 400, color: '#909399' }}>（共 {samplings.length} 次）</span>
             </div>
-            <div className="panel-body" style={{ padding: '14px 16px' }}>
-              {samplings.length === 0 ? (
-                <div className="empty-state" style={{ padding: '20px' }}>尚未取样</div>
-              ) : (
-                samplings.map((s, idx) => (
-                  <div key={s.id} style={{
-                    padding: '12px',
-                    border: '1px solid #ebeef5',
-                    borderRadius: '3px',
-                    marginBottom: idx < samplings.length - 1 ? '10px' : 0,
-                    background: idx % 2 === 0 ? '#fafbfc' : '#fff',
-                  }}>
-                    <div className="form-row" style={{ marginBottom: '10px' }}>
-                      <div className="form-item" style={{ minWidth: '140px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>样品编号</label>
-                        <div style={{ fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{s.sample_no}</div>
-                      </div>
-                      <div className="form-item" style={{ minWidth: '120px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>取样日期</label>
-                        <div>{s.sampling_date}</div>
-                      </div>
-                      <div className="form-item" style={{ minWidth: '120px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>见证监理</label>
-                        <div>{s.witness_supervisor}</div>
-                      </div>
-                      <div className="form-item" style={{ minWidth: '180px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>检测机构</label>
-                        <div>{s.testing_agency}</div>
-                      </div>
-                      <div className="form-item" style={{ minWidth: '120px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>送检时限</label>
-                        <div>{s.deadline_date}</div>
-                      </div>
-                      <div className="form-item" style={{ minWidth: '100px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>送检状态</label>
-                        <div>
-                          {s.is_sent === 1 ? (
-                            <span className="status-tag status-sent">已送检 · {s.sent_date}</span>
-                          ) : (
-                            <span className="status-tag status-sampled">待送检</span>
-                          )}
+            {samplings.length === 0 ? (
+              <div className="empty-state" style={{ padding: '20px' }}>尚未取样</div>
+            ) : (
+              samplings.map((s, idx) => (
+                <div key={s.id} className="detail-card">
+                  <div className="detail-card-head">
+                    <div className="detail-card-title">第 {idx + 1} 次取样 · 样品 {s.sample_no}</div>
+                    {s.is_sent === 1 ? (
+                      <span className="status-tag status-sent">已送检 · {s.sent_date}</span>
+                    ) : (
+                      <span className="status-tag status-sampled">待送检</span>
+                    )}
+                  </div>
+                  <div className="info-grid">
+                    <div><span className="label">取样日期：</span><span className="value">{s.sampling_date}</span></div>
+                    <div><span className="label">见证监理：</span><span className="value">{s.witness_supervisor}</span></div>
+                    <div><span className="label">检测机构：</span><span className="value">{s.testing_agency}</span></div>
+                    <div><span className="label">送检时限：</span><span className="value">{s.deadline_date}</span></div>
+                  </div>
+                  {s.sealing_photo_data && (
+                    <div style={{ marginTop: '8px' }}>
+                      <div style={{ fontSize: '12px', color: '#909399', marginBottom: '4px' }}>封样照片（点击放大）</div>
+                      <div className="sealing-photo-grid">
+                        <div
+                          className="sealing-photo-thumb"
+                          onClick={() => setPhotoPreview(s.sealing_photo_data!)}
+                        >
+                          <img src={s.sealing_photo_data} alt="封样照片" />
                         </div>
                       </div>
                     </div>
-                    {s.sealing_photo_data && (
-                      <div>
-                        <label style={{ color: '#909399', fontSize: '12px', display: 'block', marginBottom: '4px' }}>封样照片</label>
-                        <img
-                          src={s.sealing_photo_data}
-                          alt="封样照片"
-                          style={{
-                            width: '100px',
-                            height: '100px',
-                            objectFit: 'cover',
-                            border: '1px solid #dcdfe6',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => setPhotoPreview(s.sealing_photo_data!)}
-                        />
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="detail-section">
+            <div className="detail-section-title">
+              ③ 检测报告 <span style={{ fontSize: '12px', fontWeight: 400, color: '#909399' }}>（共 {reports.length} 份）</span>
+            </div>
+            {reports.length === 0 ? (
+              <div className="empty-state" style={{ padding: '20px' }}>暂无报告</div>
+            ) : (
+              reports.map(r => (
+                <div key={r.id} className="detail-card">
+                  <div className="detail-card-head">
+                    <div className="detail-card-title">{r.report_no}</div>
+                    <span className={`status-tag ${r.conclusion === '合格' ? 'status-ok' : 'status-bad'}`}>
+                      {r.conclusion}
+                    </span>
+                  </div>
+                  <div className="info-grid">
+                    <div><span className="label">报告日期：</span><span className="value">{r.report_date}</span></div>
+                    {r.unqualified_items && (
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span className="label">不合格项：</span>
+                        <span className="value" style={{ color: '#f56c6c' }}>{r.unqualified_items}</span>
                       </div>
                     )}
                   </div>
-                ))
-              )}
-            </div>
+                </div>
+              ))
+            )}
           </div>
 
-          <div className="panel">
-            <div className="panel-header" style={{ padding: '10px 16px', background: '#f5f7fa' }}>
-              <div className="panel-title" style={{ fontSize: '14px' }}>
-                ③ 检测报告 <span style={{ fontSize: '12px', fontWeight: 400, color: '#909399' }}>（共 {reports.length} 份）</span>
+          {abnormal && (
+            <div className="detail-section">
+              <div className="detail-section-title">
+                ④ 异常处置闭环
               </div>
-            </div>
-            <div className="panel-body" style={{ padding: '14px 16px' }}>
-              {reports.length === 0 ? (
-                <div className="empty-state" style={{ padding: '20px' }}>暂无报告</div>
+              {disposals.length === 0 ? (
+                <div className="empty-state" style={{ padding: '20px' }}>尚未登记处置意见，请前往「异常处置」页处理</div>
               ) : (
-                reports.map((r, idx) => (
-                  <div key={r.id} style={{
-                    padding: '12px',
-                    border: '1px solid #ebeef5',
-                    borderRadius: '3px',
-                    marginBottom: idx < reports.length - 1 ? '10px' : 0,
-                    background: idx % 2 === 0 ? '#fafbfc' : '#fff',
-                  }}>
-                    <div className="form-row" style={{ marginBottom: 0 }}>
-                      <div className="form-item" style={{ minWidth: '180px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>报告编号</label>
-                        <div style={{ fontFamily: 'Consolas, monospace', fontWeight: 600 }}>{r.report_no}</div>
+                disposals.map(d => (
+                  <div key={d.id} className="detail-card">
+                    <div className="detail-card-head">
+                      <div className="detail-card-title">
+                        处置登记 · {d.disposal_date}
+                        {d.final_result ? (
+                          <span className="sub-tag tag-ok" style={{ marginLeft: '8px' }}>已闭环</span>
+                        ) : (
+                          <span className="sub-tag tag-warn" style={{ marginLeft: '8px' }}>处置中</span>
+                        )}
                       </div>
-                      <div className="form-item" style={{ minWidth: '120px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>报告日期</label>
-                        <div>{r.report_date}</div>
+                    </div>
+                    <div className="info-grid">
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <span className="label">处置意见：</span><span className="value">{d.disposal_opinion}</span>
                       </div>
-                      <div className="form-item" style={{ minWidth: '100px' }}>
-                        <label style={{ color: '#909399', fontSize: '12px' }}>检测结论</label>
-                        <div>
-                          <span className={`status-tag ${r.conclusion === '合格' ? 'status-ok' : 'status-bad'}`}>
-                            {r.conclusion}
-                          </span>
+                      {d.retest_plan && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">复检安排：</span><span className="value">{d.retest_plan}</span>
                         </div>
-                      </div>
-                      {r.unqualified_items && (
-                        <div className="form-item" style={{ flex: 2, minWidth: '200px' }}>
-                          <label style={{ color: '#909399', fontSize: '12px' }}>不合格项</label>
-                          <div style={{ color: '#f56c6c' }}>{r.unqualified_items}</div>
+                      )}
+                      {d.final_result && (
+                        <div style={{ gridColumn: '1 / -1' }}>
+                          <span className="label">最终处理结果：</span><span className="value">{d.final_result}</span>
                         </div>
+                      )}
+                      {d.final_date && (
+                        <div><span className="label">闭环日期：</span><span className="value">{d.final_date}</span></div>
                       )}
                     </div>
                   </div>
                 ))
               )}
             </div>
+          )}
+
+          <div className="detail-section">
+            <div className="detail-section-title">
+              {abnormal ? '⑤' : '④'} 操作时间线
+            </div>
+            {logs.length === 0 ? (
+              <div className="empty-state" style={{ padding: '20px' }}>暂无操作记录</div>
+            ) : (
+              <div className="timeline">
+                {logs.map(log => {
+                  const isAbnormal = log.action.includes('异常') || log.action.includes('不合格');
+                  const isWarn = log.action.includes('送检') || log.action.includes('处置');
+                  const cls = isAbnormal ? 'bad' : (isWarn ? 'warn' : 'done');
+                  return (
+                    <div key={log.id} className={`timeline-item ${cls}`}>
+                      <div className="timeline-time">{log.created_at}</div>
+                      <div className="timeline-action">{log.action}</div>
+                      {log.description && <div className="timeline-desc">{log.description}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
+
         </div>
         <div className="modal-footer">
           <button className="btn btn-default" onClick={onClose}>关闭</button>

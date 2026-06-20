@@ -133,10 +133,10 @@ export default function ReportPanel({ onDataChange }: Props) {
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
               type="text"
-              placeholder="搜索报告/批次/样品号..."
+              placeholder="搜索报告/批次/样品/检测机构..."
               value={searchKeyword}
               onChange={e => setSearchKeyword(e.target.value)}
-              style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '240px' }}
+              style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '260px' }}
             />
             <button className="btn btn-default btn-sm" onClick={handleExport}>导出表格</button>
             <button
@@ -185,6 +185,7 @@ export default function ReportPanel({ onDataChange }: Props) {
                   <th>材料类型</th>
                   <th>批次编号</th>
                   <th>样品编号</th>
+                  <th>检测机构</th>
                   <th>报告日期</th>
                   <th>检测结论</th>
                   <th>不合格项</th>
@@ -203,6 +204,7 @@ export default function ReportPanel({ onDataChange }: Props) {
                       <td>{r.material_type}</td>
                       <td>{r.batch_no}</td>
                       <td style={{ fontFamily: 'Consolas, monospace' }}>{r.sample_no}</td>
+                      <td>{r.testing_agency || '-'}</td>
                       <td>{r.report_date}</td>
                       <td>
                         <span className={`status-tag ${r.conclusion === '合格' ? 'status-ok' : 'status-bad'}`}>

@@ -36,9 +36,9 @@ export default function InspectionPanel({ onDataChange }: Props) {
   const loadData = async (keyword?: string) => {
     const [batches, allS, overdueS, pendingS] = await Promise.all([
       window.api.batch.getByStatus('待取样'),
-      window.api.sampling.getAll(keyword),
+      window.api.sampling.getAll(filterTab === 'all' ? keyword : undefined),
       window.api.sampling.getOverdue(),
-      window.api.sampling.getPendingSend(),
+      window.api.sampling.getPendingSend(filterTab === 'pending' ? keyword : undefined),
     ]);
     setPendingBatches(batches);
     setSamplings(allS);
@@ -51,12 +51,10 @@ export default function InspectionPanel({ onDataChange }: Props) {
   }, []);
 
   useEffect(() => {
-    if (filterTab === 'all') {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-      searchTimer.current = setTimeout(() => {
-        loadData(searchKeyword);
-      }, 300);
-    }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      loadData(searchKeyword);
+    }, 300);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
@@ -185,15 +183,13 @@ export default function InspectionPanel({ onDataChange }: Props) {
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {filterTab === 'all' && (
-              <input
-                type="text"
-                placeholder="搜索批次/样品/检测机构/见证..."
-                value={searchKeyword}
-                onChange={e => setSearchKeyword(e.target.value)}
-                style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '240px' }}
-              />
-            )}
+            <input
+              type="text"
+              placeholder={filterTab === 'pending' ? '搜索待送样品...' : '搜索批次/样品/检测机构...'}
+              value={searchKeyword}
+              onChange={e => setSearchKeyword(e.target.value)}
+              style={{ padding: '6px 10px', border: '1px solid #dcdfe6', borderRadius: '3px', fontSize: '13px', width: '240px' }}
+            />
             <button className="btn btn-default btn-sm" onClick={handleExport}>导出表格</button>
             <button
               className="btn btn-primary"
